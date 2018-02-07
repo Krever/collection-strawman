@@ -405,6 +405,22 @@ final class StringOps(val s: String)
    */
   def toDouble: Double   = java.lang.Double.parseDouble(toString)
 
+  def isBoolean: Boolean = check(toBoolean)
+
+  def isByte: Boolean    = check(toByte)
+
+  def isShort: Boolean   = check(toShort)
+
+  def isInt: Boolean     = check(toInt)
+
+  def isLong: Boolean    = check(toLong)
+
+  def isFloat: Boolean   = check(toFloat)
+
+  def isDouble: Boolean  = check(toDouble)
+
+  private def check[T](f : => T): Boolean = try { f; true } catch { case e: java.lang.Throwable => false }
+
   private def parseBoolean(s: String): Boolean =
     if (s != null) s.toLowerCase match {
       case "true" => true
