@@ -9,6 +9,8 @@ import strawman.collection.mutable.StringBuilder
 import scala.util.matching.Regex
 import scala.math.{Ordered, ScalaNumber}
 import scala.reflect.ClassTag
+import scala.{Right, Left, Either, None, Some, Option}
+import scala.Predef.identity
 
 object StringOps {
   // just statics for companion class.
@@ -371,27 +373,27 @@ final class StringOps(val s: String)
   /**
    * @throws java.lang.IllegalArgumentException  If the string does not contain a parsable `Boolean`.
    */
-  def toBoolean: Boolean = parseBoolean(toString)
+  def toBoolean: Boolean = parseBoolean(toString, identity, err => throw new IllegalArgumentException(err))
   /**
    * Parse as a `Byte` (string must contain only decimal digits and optional leading `-`).
    * @throws java.lang.NumberFormatException  If the string does not contain a parsable `Byte`.
    */
-  def toByte: Byte       = java.lang.Byte.parseByte(toString)
+  def toByte: Byte       = parseByte(toString, 10, identity, err => throw new java.lang.NumberFormatException(err))
   /**
    * Parse as a `Short` (string must contain only decimal digits and optional leading `-`).
    * @throws java.lang.NumberFormatException  If the string does not contain a parsable `Short`.
    */
-  def toShort: Short     = java.lang.Short.parseShort(toString)
+  def toShort: Short     = parseShort(toString, 10, identity, err => throw new java.lang.NumberFormatException(err))
   /**
    * Parse as an `Int` (string must contain only decimal digits and optional leading `-`).
    * @throws java.lang.NumberFormatException  If the string does not contain a parsable `Int`.
    */
-  def toInt: Int         = java.lang.Integer.parseInt(toString)
+  def toInt: Int         = parseInt(toString, 10, identity, err => throw new java.lang.NumberFormatException(err))
   /**
    * Parse as a `Long` (string must contain only decimal digits and optional leading `-`).
    * @throws java.lang.NumberFormatException  If the string does not contain a parsable `Long`.
    */
-  def toLong: Long       = java.lang.Long.parseLong(toString)
+  def toLong: Long       = parseLong(toString, 10, identity, err => throw new java.lang.NumberFormatException(err))
   /**
     * Parse as a `Float` (surrounding whitespace is removed with a `trim`).
     * @throws java.lang.NumberFormatException  If the string does not contain a parsable `Float`.
@@ -405,30 +407,138 @@ final class StringOps(val s: String)
    */
   def toDouble: Double   = java.lang.Double.parseDouble(toString)
 
-  def isBoolean: Boolean = check(toBoolean)
+  def toBooleanOption: Option[Boolean] = parseBoolean(toString, Some(_), _ => None)
 
-  def isByte: Boolean    = check(toByte)
+  def toByteOption: Option[Byte] = parseByte(toString, 10, Some(_), _ => None)
 
-  def isShort: Boolean   = check(toShort)
+  def toShortOption: Option[Short] = parseShort(toString, 10, Some(_), _ => None)
 
-  def isInt: Boolean     = check(toInt)
+  def toLongOption: Option[Long] = parseLong(toString, 10, Some(_), _ => None)
 
-  def isLong: Boolean    = check(toLong)
-
-  def isFloat: Boolean   = check(toFloat)
-
-  def isDouble: Boolean  = check(toDouble)
-
-  private def check[T](f : => T): Boolean = try { f; true } catch { case e: java.lang.Throwable => false }
-
-  private def parseBoolean(s: String): Boolean =
+  private def parseBoolean[T](s: String, ok: Boolean => T, err: String => T): T =
     if (s != null) s.toLowerCase match {
-      case "true" => true
-      case "false" => false
-      case _ => throw new IllegalArgumentException("For input string: \""+s+"\"")
+      case "true" => ok(true)
+      case "false" => ok(false)
+      case _ => err("For input string: \""+s+"\"")
     }
     else
-      throw new IllegalArgumentException("For input string: \"null\"")
+      err(null)
+
+  private def parseByte[T](s: String, radix: Int, ok: Byte => T, err: String => T): T = {
+    val iOrErr: Either[String, Int] = parseInt(s, radix, Right(_), Left(_))
+    iOrErr match {
+      case Right(i) =>
+        if (i < Byte.MinValue || i > Byte.MaxValue)
+          err("Value out of range. Value:\"" + s + "\" Radix:" + radix)
+        else
+          ok(i.asInstanceOf[Byte])
+      case Left(errMsg) => err(errMsg)
+    }
+  }
+
+  private def parseShort[T](s: String, radix: Int, ok: Short => T, err: String => T): T = {
+    val iOrErr: Either[String, Int] = parseInt(s, radix, Right(_), Left(_))
+    iOrErr match {
+      case Right(i) =>
+        if (i < Short.MinValue || i > Short.MaxValue)
+          err("Value out of range. Value:\"" + s + "\" Radix:" + radix)
+        else
+          ok(i.asInstanceOf[Byte])
+      case Left(errMsg) => err(errMsg)
+    }
+  }
+
+  private def parseInt[T](s: String, radix: Int, ok: Int => T, err: String => T): T = {
+    /*
+    * WARNING: This method may be invoked early during VM initialization
+    * before IntegerCache is initialized. Care must be taken to not use
+    * the valueOf method.
+    */
+    if (s == null) return err("null")
+    if (radix < java.lang.Character.MIN_RADIX) err("radix " + radix + " less than Character.MIN_RADIX") /*throw new NumberFormatException("radix " + radix + " less than Character.MIN_RADIX")*/
+    if (radix > java.lang.Character.MAX_RADIX) err("radix " + radix + " greater than Character.MAX_RADIX")
+    var result = 0
+    var negative = false
+    var i = 0
+    val len = s.length
+    var limit = -Int.MaxValue
+    var multmin = 0
+    var digit = 0
+    if (len > 0) {
+      val firstChar = s.charAt(0)
+      if (firstChar < '0') { // Possible leading "+" or "-"
+        if (firstChar == '-') {
+          negative = true
+          limit = Int.MinValue
+        }
+        else if (firstChar != '+') return err("For input string: \"" + s + "\"")
+        if (len == 1) { // Cannot have lone "+" or "-"
+          return err("For input string: \"" + s + "\"")
+        }
+        i += 1
+      }
+      multmin = limit / radix
+      while ( {
+        i < len
+      }) { // Accumulating negatively avoids surprises near MAX_VALUE
+        digit = java.lang.Character.digit(s.charAt({
+          i += 1; i - 1
+        }), radix)
+        if (digit < 0) return err("For input string: \"" + s + "\"")
+        if (result < multmin) return err("For input string: \"" + s + "\"")
+        result *= radix
+        if (result < limit + digit) return err("For input string: \"" + s + "\"")
+        result -= digit
+      }
+    }
+    else err("For input string: \"" + s + "\"")
+    return if (negative) ok(result)
+    else ok(-result)
+  }
+
+  def parseLong[T](s: String, radix: Int, ok: Long => T, err: String => T): T = {
+    if (s == null) return err("null")
+    if (radix < java.lang.Character.MIN_RADIX) return err("radix " + radix + " less than Character.MIN_RADIX")
+    if (radix > java.lang.Character.MAX_RADIX) return err("radix " + radix + " greater than Character.MAX_RADIX")
+    var result = 0
+    var negative = false
+    var i = 0
+    val len = s.length
+    var limit = -Long.MaxValue
+    var multmin = 0L
+    var digit = 0
+    if (len > 0) {
+      val firstChar = s.charAt(0)
+      if (firstChar < '0') { // Possible leading "+" or "-"
+        if (firstChar == '-') {
+          negative = true
+          limit = Long.MinValue
+        }
+        else if (firstChar != '+') return err(s)
+        if (len == 1) { // Cannot have lone "+" or "-"
+          return err("For input string: \"" + s + "\"")
+        }
+        i += 1
+      }
+      multmin = limit / radix
+      while ( {
+        i < len
+      }) { // Accumulating negatively avoids surprises near MAX_VALUE
+        digit = java.lang.Character.digit(s.charAt({
+          i += 1; i - 1
+        }), radix)
+        if (digit < 0) return err("For input string: \"" + s + "\"")
+        if (result < multmin) return err("For input string: \"" + s + "\"")
+        result *= radix
+        if (result < limit + digit) return err("For input string: \"" + s + "\"")
+        result -= digit
+      }
+    }
+    else return err("For input string: \"" + s + "\"")
+    if (negative) ok(result)
+    else ok(-result)
+  }
+
 
   override def toArray[B >: Char : ClassTag]: Array[B] =
     toString.toCharArray.asInstanceOf[Array[B]]
