@@ -2,31 +2,34 @@ package strawman
 package collection
 
 /**
-  * A multimap whose keys are sorted
+  * A multidict whose keys are sorted
   * @tparam K the type of keys
   * @tparam V the type of values
   */
-trait SortedMultiMap[K, V]
-  extends MultiMap[K, V]
-    with SortedMultiMapOps[K, V, SortedMultiMap, SortedMultiMap[K, V]] {
+trait SortedMultiDict[K, V]
+  extends MultiDict[K, V]
+    with SortedMultiDictOps[K, V, SortedMultiDict, SortedMultiDict[K, V]] {
 
-  def unsorted: MultiMap[K, V] = this
+  def unsorted: MultiDict[K, V] = this
 
+  override protected[this] def fromSpecificIterable(coll: Iterable[(K, V)]): SortedMultiDictCC[K, V] = sortedMultiMapFactory.from(coll)
+  override protected[this] def newSpecificBuilder(): mutable.Builder[(K, V), SortedMultiDictCC[K, V]] = sortedMultiMapFactory.newBuilder[K, V]()
 }
 
-trait SortedMultiMapOps[K, V, +CC[X, Y] <: MultiMap[X, Y], +C <: MultiMap[K, V]]
-  extends MultiMapOps[K, V, MultiMap, C]
+trait SortedMultiDictOps[K, V, +CC[X, Y] <: MultiDict[X, Y], +C <: MultiDict[K, V]]
+  extends MultiDictOps[K, V, MultiDict, C]
     with SortedOps[K, C] {
 
-  def multiMapFactory: MapFactory[MultiMap] = MultiMap
-  def sortedMultiMapFactory: SortedMapFactory[CC]
+  protected[this] type SortedMultiDictCC[K, V] = CC[K, V]
+
+  def sortedMultiMapFactory: SortedMapFactory[SortedMultiDictCC]
 
   protected[this] def sortedFromIterable[L : Ordering, W](it: Iterable[(L, W)]): CC[L, W]
   protected[this] def sortedFromSets[L : Ordering, W](it: Iterable[(L, Set[W])]): CC[L, W] =
     sortedFromIterable(it.view.flatMap { case (l, ws) => ws.map(w => (l, w)) })
 
-  /** `this` sorted multimap upcasted to an unsorted multimap */
-  def unsorted: MultiMap[K, V]
+  /** `this` sorted multidict upcasted to an unsorted multidict */
+  def unsorted: MultiDict[K, V]
 
   def sets: SortedMap[K, Set[V]]
 
@@ -51,23 +54,23 @@ trait SortedMultiMapOps[K, V, +CC[X, Y] <: MultiMap[X, Y], +C <: MultiMap[K, V]]
   override def withFilter(p: ((K, V)) => Boolean): SortedMultiMapWithFilter = new SortedMultiMapWithFilter(p)
 
   class SortedMultiMapWithFilter(p: ((K, V)) => Boolean) extends MultiMapWithFilter(p) {
-    def map[L : Ordering, W](f: ((K, V)) => (L, W)): CC[L, W] = sortedFromIterable(View.Map(filtered, f))
-    def flatMap[L : Ordering, W](f: ((K, V)) => IterableOnce[(L, W)]): CC[L, W] = sortedFromIterable(View.FlatMap(filtered, f))
+    def map[L : Ordering, W](f: ((K, V)) => (L, W)): CC[L, W] = sortedFromIterable(new View.Map(filtered, f))
+    def flatMap[L : Ordering, W](f: ((K, V)) => IterableOnce[(L, W)]): CC[L, W] = sortedFromIterable(new View.FlatMap(filtered, f))
     override def withFilter(q: ((K, V)) => Boolean): SortedMultiMapWithFilter = new SortedMultiMapWithFilter(kv => p(kv) && q(kv))
   }
 
   /**
-    * @return a sorted multimap that contains all the entries of `this` sorted multimap,
+    * @return a sorted multidict that contains all the entries of `this` sorted multidict,
     *         transformed by the function `f`
     *
     * @param f transformation function
     * @tparam L new type of keys
     * @tparam W new type of values
     */
-  def map[L : Ordering, W](f: ((K, V)) => (L, W)): CC[L, W] = sortedFromIterable(View.Map(toIterable, f))
+  def map[L : Ordering, W](f: ((K, V)) => (L, W)): CC[L, W] = sortedFromIterable(new View.Map(toIterable, f))
 
   /**
-    * Builds a new sorted multimap by applying a function to all groups of elements
+    * Builds a new sorted multidict by applying a function to all groups of elements
     *
     * @param f  the function to apply
     * @tparam L the type of keys of the returned collection
@@ -75,30 +78,30 @@ trait SortedMultiMapOps[K, V, +CC[X, Y] <: MultiMap[X, Y], +C <: MultiMap[K, V]]
     *           `f` to each pair of element and its number of occurrences of this
     *           sorted multiset and collecting the results.
     */
-  def mapSets[L : Ordering, W](f: ((K, Set[V])) => (L, Set[W])): CC[L, W] = sortedFromSets(View.Map(sets, f))
+  def mapSets[L : Ordering, W](f: ((K, Set[V])) => (L, Set[W])): CC[L, W] = sortedFromSets(new View.Map(sets, f))
 
   /**
-    * @return a sorted multimap that contains all the entries of `this` sorted multimap,
+    * @return a sorted multidict that contains all the entries of `this` sorted multidict,
     *         transformed by the function `f` and concatenated
     *
     * @param f transformation function
     * @tparam L new type of keys
     * @tparam W new type of values
     */
-  def flatMap[L : Ordering, W](f: ((K, V)) => IterableOnce[(L, W)]): CC[L, W] = sortedFromIterable(View.FlatMap(toIterable, f))
+  def flatMap[L : Ordering, W](f: ((K, V)) => IterableOnce[(L, W)]): CC[L, W] = sortedFromIterable(new View.FlatMap(toIterable, f))
 
   /**
-    * @return a new sorted multimap resulting from applying the given function `f`
-    *         to each group of values of this sorted multimap and concatenating
+    * @return a new sorted multidict resulting from applying the given function `f`
+    *         to each group of values of this sorted multidict and concatenating
     *         the results
     * @param f the function to apply
     * @tparam L the new type of keys
-    * @tparam W the type of values of the returned sorted multimap
+    * @tparam W the type of values of the returned sorted multidict
     */
-  def flatMapSets[L : Ordering, W](f: ((K, Set[V])) => IterableOnce[(L, Set[W])]): CC[L, W] = sortedFromSets(View.FlatMap(sets, f))
+  def flatMapSets[L : Ordering, W](f: ((K, Set[V])) => IterableOnce[(L, Set[W])]): CC[L, W] = sortedFromSets(new View.FlatMap(sets, f))
 
   /**
-    * @return a sorted multimap that contains all the entries of `this` sorted multimap
+    * @return a sorted multidict that contains all the entries of `this` sorted multidict
     *         after they have been successfully transformed by the
     *         given partial function `pf`
     *
@@ -107,12 +110,12 @@ trait SortedMultiMapOps[K, V, +CC[X, Y] <: MultiMap[X, Y], +C <: MultiMap[K, V]]
     * @tparam W new type of values
     */
   def collect[L : Ordering, W](pf: PartialFunction[(K, V), (L, W)]): CC[L, W] = flatMap(kv =>
-    if (pf.isDefinedAt(kv)) View.Single(pf(kv))
+    if (pf.isDefinedAt(kv)) new View.Single(pf(kv))
     else View.Empty
   )
 
   /**
-    * @return a sorted multimap that contains all the entries of `this` sorted multimap,
+    * @return a sorted multidict that contains all the entries of `this` sorted multidict,
     *         after they have been successfully transformed by the given
     *         partial function
     *
@@ -121,10 +124,10 @@ trait SortedMultiMapOps[K, V, +CC[X, Y] <: MultiMap[X, Y], +C <: MultiMap[K, V]]
     * @tparam W the new type of values
     */
   def collectSets[L : Ordering, W](pf: PartialFunction[(K, Set[V]), (L, Set[W])]): CC[L, W] = flatMapSets(kv =>
-    if (pf.isDefinedAt(kv)) View.Single(pf(kv))
+    if (pf.isDefinedAt(kv)) new View.Single(pf(kv))
     else View.Empty
   )
 
 }
 
-object SortedMultiMap extends SortedMapFactory.Delegate[SortedMultiMap](immutable.SortedMultiMap)
+object SortedMultiDict extends SortedMapFactory.Delegate[SortedMultiDict](immutable.SortedMultiDict)

@@ -14,7 +14,7 @@ import collection.Iterator
 import scala.annotation.tailrec
 import scala.annotation.meta.getter
 
-import scala.{Array, Boolean, Int, None, NoSuchElementException, Option, Ordering, Serializable, Some, sys, Unit, `inline`, throws}
+import scala.{Array, Boolean, Int, None, NoSuchElementException, Option, Ordering, Serializable, SerialVersionUID, Some, sys, Unit, `inline`, throws}
 import java.lang.{Integer, String}
 
 /** An object containing the RedBlack tree implementation used by for `TreeMaps` and `TreeSets`.
@@ -194,8 +194,8 @@ private[collection] object RedBlackTree {
   }
 
   /* Based on Stefan Kahrs' Haskell version of Okasaki's Red&Black Trees
-   * Constructing Red-Black Trees, Ralf Hinze: http://www.cs.ox.ac.uk/ralf.hinze/publications/WAAAPL99b.ps.gz
-   * Red-Black Trees in a Functional Setting, Chris Okasaki: https://wiki.rice.edu/confluence/download/attachments/2761212/Okasaki-Red-Black.pdf */
+   * Constructing Red-Black Trees, Ralf Hinze: [[http://www.cs.ox.ac.uk/ralf.hinze/publications/WAAAPL99b.ps.gz]]
+   * Red-Black Trees in a Functional Setting, Chris Okasaki: [[https://wiki.rice.edu/confluence/download/attachments/2761212/Okasaki-Red-Black.pdf]] */
   private[this] def del[A, B](tree: Tree[A, B], k: A)(implicit ordering: Ordering[A]): Tree[A, B] = if (tree eq null) null else {
     def balance(x: A, xv: B, tl: Tree[A, B], tr: Tree[A, B]) = if (isRedTree(tl)) {
       if (isRedTree(tr)) {
@@ -456,6 +456,7 @@ private[collection] object RedBlackTree {
    *
    * An alternative is to implement the these classes using plain old Java code...
    */
+  @SerialVersionUID(3L)
   sealed abstract class Tree[A, +B](
     @(`inline` @getter) final val key: A,
     @(`inline` @getter) final val value: B,
@@ -466,6 +467,7 @@ private[collection] object RedBlackTree {
     def black: Tree[A, B]
     def red: Tree[A, B]
   }
+  @SerialVersionUID(3L)
   final class RedTree[A, +B](key: A,
     value: B,
     left: Tree[A, B],
@@ -474,6 +476,7 @@ private[collection] object RedBlackTree {
     override def red: Tree[A, B] = this
     override def toString: String = "RedTree(" + key + ", " + value + ", " + left + ", " + right + ")"
   }
+  @SerialVersionUID(3L)
   final class BlackTree[A, +B](key: A,
     value: B,
     left: Tree[A, B],

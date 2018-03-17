@@ -5,9 +5,13 @@ import scala.Predef.{String, ArrowAssoc}
 
 package object collection extends LowPriority {
   @deprecated("Use Iterable instead of Traversable", "2.13.0")
+  type Traversable[+X] = Iterable[X]
+  @deprecated("Use Iterable instead of Traversable", "2.13.0")
   val Traversable = Iterable
   @deprecated("Use SeqOps instead of SeqLike", "2.13.0")
   type SeqLike[A, T] = SeqOps[A, Seq, T]
+  @deprecated("Use SeqOps (for the methods) or IndexedSeqOps (for fast indexed access) instead of ArrayLike", "2.13.0")
+  type ArrayLike[A] = SeqOps[A, Seq, Seq[A]]
 
   @deprecated("Gen* collection types have been removed", "2.13.0")
   type GenTraversableOnce[+X] = IterableOnce[X]

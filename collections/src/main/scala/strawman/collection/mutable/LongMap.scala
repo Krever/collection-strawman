@@ -1,7 +1,7 @@
 package strawman.collection
 package mutable
 
-import scala.{Long, AnyRef, Boolean, NoSuchElementException, Some, None, Option, Unit, Int, Array, Serializable, Nothing, math, deprecated}
+import scala.{Long, AnyRef, Boolean, NoSuchElementException, PartialFunction, Some, None, Option, Unit, Int, Array, Serializable, SerialVersionUID, Nothing, math, deprecated}
 
 /** This class implements mutable maps with `Long` keys based on a hash table with open addressing.
   *
@@ -23,6 +23,7 @@ import scala.{Long, AnyRef, Boolean, NoSuchElementException, Some, None, Option,
   *  rapidly as 2^30 is approached.
   *
   */
+@SerialVersionUID(3L)
 final class LongMap[V] private[collection] (defaultEntry: Long => V, initialBufferSize: Int, initBlank: Boolean)
   extends Map[Long, V]
     with MapOps[Long, V, Map, LongMap[V]]
@@ -34,16 +35,14 @@ final class LongMap[V] private[collection] (defaultEntry: Long => V, initialBuff
   def this() = this(LongMap.exceptionDefault, 16, true)
 
   def clear(): Unit = { keysIterator() foreach -= } // TODO optimize
-  protected[this] def fromSpecificIterable(coll: strawman.collection.Iterable[(Long, V)]): LongMap[V] = {
+  override protected[this] def fromSpecificIterable(coll: strawman.collection.Iterable[(Long, V)]): LongMap[V] = {
     //TODO should this be the default implementation of this method in StrictOptimizedIterableOps?
     val b = newSpecificBuilder()
     b.sizeHint(coll)
     b.addAll(coll)
     b.result()
   }
-  protected[this] def newSpecificBuilder(): Builder[(Long, V),LongMap[V]] = new GrowableBuilder(LongMap.empty[V])
-  def mapFactory: strawman.collection.MapFactory[Map] = Map
-  protected[this] def mapFromIterable[K2, V2](it: strawman.collection.Iterable[(K2, V2)]): Map[K2,V2] = mapFactory.from(it)
+  override protected[this] def newSpecificBuilder(): Builder[(Long, V),LongMap[V]] = new GrowableBuilder(LongMap.empty[V])
 
   /** Creates a new `LongMap` that returns default values according to a supplied key-value mapping. */
   def this(defaultEntry: Long => V) = this(defaultEntry, 16, true)
@@ -440,6 +439,8 @@ final class LongMap[V] private[collection] (defaultEntry: Long => V, initialBuff
     lm
   }
 
+  override def ++ [V1 >: V](xs: strawman.collection.Iterable[(Long, V1)]): LongMap[V1] = concat(xs)
+
   @deprecated("Use LongMap.from(m).add(k,v) instead of m.updated(k, v)", "2.13.0")
   def updated[V1 >: V](key: Long, value: V1): LongMap[V1] = {
     val lm = clone().asInstanceOf[LongMap[V1]]
@@ -517,6 +518,14 @@ final class LongMap[V] private[collection] (defaultEntry: Long => V, initialBuff
     }
     this
   }
+
+  def map[V2](f: ((Long, V)) => (Long, V2)): LongMap[V2] = LongMap.from(new View.Map(coll, f))
+
+  def flatMap[V2](f: ((Long, V)) => IterableOnce[(Long, V2)]): LongMap[V2] = LongMap.from(new View.FlatMap(coll, f))
+
+  def collect[V2](pf: PartialFunction[(Long, V), (Long, V2)]): LongMap[V2] =
+    flatMap(kv => if (pf.isDefinedAt(kv)) new View.Single(pf(kv)) else View.Empty)
+
 }
 
 object LongMap {

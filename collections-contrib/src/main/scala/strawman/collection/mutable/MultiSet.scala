@@ -7,15 +7,16 @@ import strawman.collection.decorators.MutableMapDecorator
 /**
   * A mutable multiset.
   */
-class MultiSet[A] private (val elems: Map[A, Int])
+trait MultiSet[A]
   extends collection.MultiSet[A]
     with collection.MultiSetOps[A, MultiSet, MultiSet[A]]
     with Growable[A]
     with Shrinkable [A] {
 
-  def iterableFactory: IterableFactory[MultiSet] = MultiSet
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[A]): MultiSet[A] = fromIterable(coll)
-  protected[this] def newSpecificBuilder(): Builder[A, MultiSet[A]] = iterableFactory.newBuilder()
+  override def iterableFactory: IterableFactory[MultiSet] = MultiSet
+}
+
+class MultiSetImpl[A] private[mutable] (val elems: Map[A, Int]) extends MultiSet[A] {
 
   def occurrences: collection.Map[A, Int] = elems
 
@@ -41,7 +42,7 @@ object MultiSet extends IterableFactory[MultiSet] {
 
   def from[A](source: IterableOnce[A]): MultiSet[A] = (newBuilder[A]() ++= source).result()
 
-  def empty[A]: MultiSet[A] = new MultiSet[A](Map.empty)
+  def empty[A]: MultiSet[A] = new MultiSetImpl[A](Map.empty)
 
   def newBuilder[A](): Builder[A, MultiSet[A]] = new GrowableBuilder[A, MultiSet[A]](empty)
 

@@ -9,7 +9,7 @@
 package strawman.collection
 package immutable
 
-import scala.{Int, Long, None, Boolean, Unit, Any, AnyRef, Nothing, Array, Option, Some, IllegalArgumentException, `inline`}
+import scala.{Int, Long, None, Boolean, Unit, Any, AnyRef, Nothing, Array, PartialFunction, Option, Serializable, SerialVersionUID, Some, IllegalArgumentException, `inline`}
 import java.lang.IllegalStateException
 import strawman.collection.generic.BitOperations
 import strawman.collection.mutable.{Builder, ImmutableBuilder, ListBuffer}
@@ -49,6 +49,15 @@ object LongMap {
   def apply[T](elems: (Long, T)*): LongMap[T] =
     elems.foldLeft(empty[T])((x, y) => x.updated(y._1, y._2))
 
+  def from[V](coll: IterableOnce[(Long, V)]): LongMap[V] =
+    newBuilder[V]().addAll(coll).result()
+
+  def newBuilder[V](): Builder[(Long, V), LongMap[V]] =
+    new ImmutableBuilder[(Long, V), LongMap[V]](empty) {
+      def addOne(elem: (Long, V)): this.type = { elems = elems + elem; this }
+    }
+
+  @SerialVersionUID(3L)
   private[immutable] case object Nil extends LongMap[Nothing] {
     // Important, don't remove this! See IntMap for explanation.
     override def equals(that : Any) = that match {
@@ -58,11 +67,14 @@ object LongMap {
     }
   }
 
+  @SerialVersionUID(3L)
   private[immutable] case class Tip[+T](key: Long, value: T) extends LongMap[T] {
     def withValue[S](s: S) =
       if (s.asInstanceOf[AnyRef] eq value.asInstanceOf[AnyRef]) this.asInstanceOf[LongMap.Tip[S]]
       else LongMap.Tip(key, s)
   }
+
+  @SerialVersionUID(3L)
   private[immutable] case class Bin[+T](prefix: Long, mask: Long, left: LongMap[T], right: LongMap[T]) extends LongMap[T] {
     def bin[S](left: LongMap[S], right: LongMap[S]): LongMap[S] = {
       if ((this.left eq left) && (this.right eq right)) this.asInstanceOf[LongMap.Bin[S]]
@@ -130,7 +142,7 @@ private[immutable] class LongMapKeyIterator[V](it: LongMap[V]) extends LongMapIt
 
 /**
   *  Specialised immutable map structure for long keys, based on
-  *  <a href="http://citeseer.ist.psu.edu/okasaki98fast.html">Fast Mergeable Long Maps</a>
+  *  [[http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.37.5452 Fast Mergeable Long Maps]]
   *  by Okasaki and Gill. Essentially a trie based on binary digits of the integers.
   *
   *  Note: This class is as of 2.8 largely superseded by HashMap.
@@ -143,24 +155,23 @@ private[immutable] class LongMapKeyIterator[V](it: LongMap[V]) extends LongMapIt
   *  @define mayNotTerminateInf
   *  @define willNotTerminateInf
   */
+@SerialVersionUID(3L)
 sealed abstract class LongMap[+T] extends Map[Long, T]
   with MapOps[Long, T, Map, LongMap[T]]
-  with StrictOptimizedIterableOps[(Long, T), Iterable, LongMap[T]] {
+  with StrictOptimizedIterableOps[(Long, T), Iterable, LongMap[T]]
+  with Serializable {
 
-  protected[this] def fromSpecificIterable(coll: strawman.collection.Iterable[(Long, T)]): LongMap[T] = {
+  override protected[this] def fromSpecificIterable(coll: strawman.collection.Iterable[(Long, T)]): LongMap[T] = {
     //TODO should this be the default implementation of this method in StrictOptimizedIterableOps?
     val b = newSpecificBuilder()
     b.sizeHint(coll)
     b.addAll(coll)
     b.result()
   }
-  def iterableFactory: IterableFactory[Iterable] = Iterable
-  protected[this] def newSpecificBuilder(): Builder[(Long, T), LongMap[T]] =
+  override protected[this] def newSpecificBuilder(): Builder[(Long, T), LongMap[T]] =
     new ImmutableBuilder[(Long, T), LongMap[T]](empty) {
       def addOne(elem: (Long, T)): this.type = { elems = elems + elem; this }
     }
-  def mapFactory: MapFactory[Map] = Map
-  protected[this] def mapFromIterable[K2, V2](it: strawman.collection.Iterable[(K2, V2)]): Map[K2,V2] = mapFactory.from(it)
 
   override def empty: LongMap[T] = LongMap.Nil
 
@@ -438,5 +449,17 @@ sealed abstract class LongMap[+T] extends Map[Long, T]
     case LongMap.Tip(k , v) => k
     case LongMap.Nil => throw new IllegalStateException("Empty set")
   }
+
+  def map[V2](f: ((Long, T)) => (Long, V2)): LongMap[V2] = LongMap.from(new View.Map(coll, f))
+
+  def flatMap[V2](f: ((Long, T)) => IterableOnce[(Long, V2)]): LongMap[V2] = LongMap.from(new View.FlatMap(coll, f))
+
+  override def concat[V1 >: T](that: strawman.collection.Iterable[(Long, V1)]): LongMap[V1] =
+    super.concat(that).asInstanceOf[LongMap[V1]] // Already has corect type but not declared as such
+
+  override def ++ [V1 >: T](that: strawman.collection.Iterable[(Long, V1)]): LongMap[V1] = concat(that)
+
+  def collect[V2](pf: PartialFunction[(Long, T), (Long, V2)]): LongMap[V2] =
+    flatMap(kv => if (pf.isDefinedAt(kv)) new View.Single(pf(kv)) else View.Empty)
 
 }

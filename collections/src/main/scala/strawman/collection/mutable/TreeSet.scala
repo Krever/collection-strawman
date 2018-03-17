@@ -21,7 +21,7 @@ import java.lang.String
   * @define coll mutable tree set
   */
 // Original API designed in part by Lucien Pereira
-@SerialVersionUID(-3642111301929493640L)
+@SerialVersionUID(3L)
 sealed class TreeSet[A] private (tree: RB.Tree[A, Null])(implicit val ordering: Ordering[A])
   extends SortedSet[A]
     with SortedSetOps[A, TreeSet, TreeSet[A]]
@@ -41,19 +41,9 @@ sealed class TreeSet[A] private (tree: RB.Tree[A, Null])(implicit val ordering: 
 
   def iterator(): collection.Iterator[A] = RB.keysIterator(tree)
 
-  protected[this] def sortedFromIterable[B : Ordering](it: collection.Iterable[B]): TreeSet[B] = TreeSet.from(it)
-
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[A]): TreeSet[A] = TreeSet.from(coll)
-
-  protected[this] def newSpecificBuilder(): Builder[A, TreeSet[A]] = TreeSet.newBuilder()
-
-  def iterableFactory = Set
-
-  def sortedIterableFactory = TreeSet
+  override def sortedIterableFactory: SortedIterableFactory[TreeSet] = TreeSet
 
   def iteratorFrom(start: A): collection.Iterator[A] = RB.keysIterator(tree, Some(start))
-
-  def empty: TreeSet[A] = TreeSet.empty
 
   def addOne(elem: A): this.type = {
     RB.insert(tree, elem, null)
@@ -105,7 +95,7 @@ sealed class TreeSet[A] private (tree: RB.Tree[A, Null])(implicit val ordering: 
     * @param until the upper bound (exclusive) of this projection wrapped in a `Some`, or `None` if there is no upper
     *              bound.
     */
-  @SerialVersionUID(7087824939194006086L)
+  @SerialVersionUID(3L)
   private[this] final class TreeSetProjection(from: Option[A], until: Option[A]) extends TreeSet[A](tree) {
 
     /**

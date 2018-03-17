@@ -2,7 +2,8 @@ package strawman
 package collection
 package mutable
 
-import scala.{AnyRef, Any, Nothing, Array, Int, Boolean, Some, None, Option, SerialVersionUID, Serializable, NoSuchElementException, Unit, deprecated}
+import scala.{AnyRef, Any, Nothing, Array, Int, Boolean, PartialFunction, Some, None, Option, SerialVersionUID, Serializable, NoSuchElementException, Unit, deprecated}
+import scala.Predef.<:<
 import scala.math
 
 /** This class implements mutable maps with `AnyRef` keys based on a hash table with open addressing.
@@ -28,7 +29,7 @@ import scala.math
  *  rapidly as 2^30^ is approached.
  *
  */
-@SerialVersionUID(1L)
+@SerialVersionUID(3L)
 class AnyRefMap[K <: AnyRef, V] private[collection] (defaultEntry: K => V, initialBufferSize: Int, initBlank: Boolean)
   extends Map[K, V]
     with MapOps[K, V, Map, AnyRefMap[K, V]]
@@ -75,9 +76,7 @@ class AnyRefMap[K <: AnyRef, V] private[collection] (defaultEntry: K => V, initi
     mask = m; _size = sz; _vacant = vc; _hashes = hz; _keys = kz; _values = vz
   }
 
-  def mapFactory: strawman.collection.MapFactory[Map] = Map
-  protected[this] def mapFromIterable[K2, V2](it: strawman.collection.Iterable[(K2, V2)]): Map[K2,V2] = mapFactory.from(it)
-  protected[this] def fromSpecificIterable(coll: strawman.collection.Iterable[(K, V)]): AnyRefMap[K,V] = {
+  override protected[this] def fromSpecificIterable(coll: strawman.collection.Iterable[(K, V)]): AnyRefMap[K,V] = {
     var sz = coll.knownSize
     if(sz < 0) sz = 4
     val arm = new AnyRefMap[K, V](sz * 2)
@@ -85,7 +84,7 @@ class AnyRefMap[K <: AnyRef, V] private[collection] (defaultEntry: K => V, initi
     if (arm.size < (sz>>3)) arm.repack()
     arm
   }
-  protected[this] def newSpecificBuilder(): Builder[(K, V), AnyRefMap[K,V]] = new AnyRefMapBuilder
+  override protected[this] def newSpecificBuilder(): Builder[(K, V), AnyRefMap[K,V]] = new AnyRefMapBuilder
 
   override def size: Int = _size
   override def empty: AnyRefMap[K,V] = new AnyRefMap(defaultEntry)
@@ -94,13 +93,14 @@ class AnyRefMap[K <: AnyRef, V] private[collection] (defaultEntry: K => V, initi
     (_size + _vacant) > 0.5*mask || _vacant > _size
 
   private def hashOf(key: K): Int = {
+    // Note: this method must not return 0 or Int.MinValue, as these indicate no element
     if (key eq null) 0x41081989
     else {
       val h = key.hashCode
       // Part of the MurmurHash3 32 bit finalizer
       val i = (h ^ (h >>> 16)) * 0x85EBCA6B
-      val j = (i ^ (i >>> 13))
-      if (j==0) 0x41081989 else j & 0x7FFFFFFF
+      val j = (i ^ (i >>> 13)) & 0x7FFFFFFF
+      if (j==0) 0x41081989 else j
     }
   }
 
@@ -356,6 +356,8 @@ class AnyRefMap[K <: AnyRef, V] private[collection] (defaultEntry: K => V, initi
     arm
   }
 
+  override def ++[V2 >: V](xs: strawman.collection.Iterable[(K, V2)]): AnyRefMap[K, V2] = concat(xs)
+
   @deprecated("Use AnyRefMap.from(m).add(k,v) instead of m.updated(k, v)", "2.13.0")
   def updated[V1 >: V](key: K, value: V1): AnyRefMap[K, V1] = {
     val arm = clone().asInstanceOf[AnyRefMap[K, V1]]
@@ -421,6 +423,18 @@ class AnyRefMap[K <: AnyRef, V] private[collection] (defaultEntry: K => V, initi
 
   //TODO Replace this default implementation that used to be in MapLike
   def clear(): Unit = keysIterator() foreach -=
+
+  // The `K with AnyRef` parameter type is necessary to distinguish these methods from the base methods they overload (not override)
+  // TODO: Remove the unnecessary implicit in Scala 2.13; Dotty requires it for disambiguation
+  def map[K2 <: AnyRef, V2](f: ((K with AnyRef, V)) => (K2, V2))(implicit ev: K2 <:< AnyRef): AnyRefMap[K2, V2] =
+    AnyRefMap.from(new View.Map(toIterable, f))
+  def flatMap[K2 <: AnyRef, V2](f: ((K with AnyRef, V)) => IterableOnce[(K2, V2)])(implicit ev: K2 <:< AnyRef): AnyRefMap[K2, V2] =
+    AnyRefMap.from(new View.FlatMap(toIterable, f))
+  def collect[K2 <: AnyRef, V2](pf: PartialFunction[(K with AnyRef, V), (K2, V2)])(implicit ev: K2 <:< AnyRef): AnyRefMap[K2, V2] =
+    flatMap { kv =>
+      if (pf.isDefinedAt(kv)) new View.Single(pf(kv))
+      else View.Empty
+    }
 }
 
 object AnyRefMap {
@@ -429,7 +443,7 @@ object AnyRefMap {
   private final val VacantBit  = 0x40000000
   private final val MissVacant = 0xC0000000
 
-  @SerialVersionUID(1L)
+  @SerialVersionUID(3L)
   private class ExceptionDefault extends (Any => Nothing) with Serializable {
     def apply(k: Any): Nothing = throw new NoSuchElementException(if (k == null) "(null)" else k.toString)
   }
@@ -471,7 +485,8 @@ object AnyRefMap {
     * which is already an `AnyRefMap` gets cloned.
     *
     * @param source Source collection
-    * @tparam A the type of the collection’s elements
+    * @tparam K the type of the keys
+    * @tparam V the type of the values
     * @return a new `AnyRefMap` with the elements of `source`
     */
   def from[K <: AnyRef, V](source: IterableOnce[(K, V)]): AnyRefMap[K, V] = source match {

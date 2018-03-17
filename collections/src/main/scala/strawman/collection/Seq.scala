@@ -20,7 +20,7 @@ trait Seq[+A]
     with SeqOps[A, Seq, Seq[A]]
     with Equals {
 
-  def iterableFactory: SeqFactory[Seq]
+  override def iterableFactory: SeqFactory[IterableCC] = Seq
 
   /** Method called from equality methods, so that user-defined subclasses can
     *  refuse to be equal to other collections of the same kind.
@@ -82,33 +82,22 @@ object Seq extends SeqFactory.Delegate[Seq](immutable.Seq)
   * @define Coll `Seq`
   */
 trait SeqOps[+A, +CC[_], +C] extends Any
-  with IterableOps[A, CC, C] {
+  with IterableOps[A, CC, C] { self =>
+
+  override def view: SeqView[A] = new SeqView.Id[A](this)
+
+  /** Get the element at the specified index. This operation is provided for convenience in `Seq`. It should
+    * not be assumed to be efficient unless you have an `IndexedSeq`. */
+  @throws[IndexOutOfBoundsException]
+  def apply(i: Int): A
+
+  /** The length (number of elements) of the $coll. `size` is an alias for `length` in `Seq` collections. */
+  def length: Int
 
   /**
     * @return This collection as a `Seq[A]`. This is equivalent to `to(Seq)` but might be faster.
     */
   def toSeq: Seq[A]
-
-  /** Selects an element by its index in the $coll.
-    *
-    * Example:
-    *
-    * {{{
-    *    scala> val x = List(1, 2, 3, 4, 5)
-    *    x: List[Int] = List(1, 2, 3, 4, 5)
-    *
-    *    scala> x(3)
-    *    res1: Int = 4
-    * }}}
-    *
-    *  @param  idx  The index to select.
-    *  @return the element of this $coll at index `idx`, where `0` indicates the first element.
-    *  @throws IndexOutOfBoundsException if `idx` does not satisfy `0 <= idx < length`.
-    */
-  def apply(idx: Int): A
-
-  /** Alias for `size` */
-  @`inline` final def length: Int = size
 
   /** A copy of the $coll with an element prepended.
     *
@@ -132,7 +121,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
     *    @return a new $coll consisting of `value` followed
     *            by all elements of this $coll.
     */
-  def prepended[B >: A](elem: B): CC[B] = fromIterable(View.Prepend(elem, toIterable))
+  def prepended[B >: A](elem: B): CC[B] = fromIterable(new View.Prepended(elem, this))
 
   /** Alias for `prepended`.
     *
@@ -162,7 +151,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
     * @return a new $coll consisting of
     *         all elements of this $coll followed by `value`.
     */
-  def appended[B >: A](elem: B): CC[B] = fromIterable(View.Append(toIterable, elem))
+  def appended[B >: A](elem: B): CC[B] = fromIterable(new View.Appended(this, elem))
 
   /** Alias for `appended`
     *
@@ -183,7 +172,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
     *  @return       a new $coll which contains all elements of `prefix` followed
     *                  by all the elements of this $coll.
     */
-  def prependedAll[B >: A](prefix: Iterable[B]): CC[B] = fromIterable(View.Concat(prefix, toIterable))
+  def prependedAll[B >: A](prefix: Iterable[B]): CC[B] = fromIterable(new View.Concat(prefix, this))
 
   /** Alias for `prependedAll` */
   @`inline` final def ++: [B >: A](prefix: Iterable[B]): CC[B] = prependedAll(prefix)
@@ -206,6 +195,8 @@ trait SeqOps[+A, +CC[_], +C] extends Any
   // overrides of this method
   @`inline` final override def concat[B >: A](suffix: Iterable[B]): CC[B] = appendedAll(suffix)
 
+  final override def size: Int = length
+
   /** Selects all the elements of this $coll ignoring the duplicates.
     *
     * @return a new $coll consisting of all the elements of this $coll without duplicates.
@@ -219,7 +210,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
     * @tparam B the type of the elements after being transformed by `f`
     * @return a new $coll consisting of all the elements of this $coll without duplicates.
     */
-  def distinctBy[B](f: A => B): C = fromSpecificIterable(View.DistinctBy(toIterable, f))
+  def distinctBy[B](f: A => B): C = fromSpecificIterable(new View.DistinctBy(this, f))
 
   /** Returns new $coll with elements in reversed order.
    *
@@ -265,7 +256,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
     *  @return `true` if this $coll has `that` as a suffix, `false` otherwise.
     */
   def endsWith[B >: A](that: Iterable[B]): Boolean = {
-    val i = iterator().drop(size - that.size)
+    val i = iterator().drop(length - that.size)
     val j = that.iterator()
     while (i.hasNext && j.hasNext)
       if (i.next() != j.next())
@@ -282,7 +273,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
     * @param    idx     the index to test
     * @return   `true` if this $coll contains an element at position `idx`, `false` otherwise.
     */
-  def isDefinedAt(idx: Int): Boolean = (idx >= 0) && (idx < size)
+  def isDefinedAt(idx: Int): Boolean = (idx >= 0) && (idx < length)
 
   /** A copy of this $coll with an element value appended until a given target length is reached.
    *
@@ -293,7 +284,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
    *          all elements of this $coll followed by the minimal number of occurrences of `elem` so
    *          that the resulting collection has a length of at least `len`.
    */
-  def padTo[B >: A](len: Int, elem: B): CC[B] = fromIterable(View.PadTo(toIterable, len, elem))
+  def padTo[B >: A](len: Int, elem: B): CC[B] = fromIterable(new View.PadTo(this, len, elem))
 
   /** Computes length of longest segment whose elements all satisfy some predicate.
     *
@@ -352,7 +343,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
     *  @return  the index `<= end` of the last element of this $coll that is equal (as determined by `==`)
     *           to `elem`, or `-1`, if none exists.
     */
-  def lastIndexOf[B >: A](elem: B, end: Int = size - 1): Int = lastIndexWhere(elem == _, end)
+  def lastIndexOf[B >: A](elem: B, end: Int = length - 1): Int = lastIndexWhere(elem == _, end)
 
   /** Finds index of last element satisfying some predicate before or at given end index.
     *
@@ -360,8 +351,8 @@ trait SeqOps[+A, +CC[_], +C] extends Any
     *  @return  the index `<= end` of the last element of this $coll that satisfies the predicate `p`,
     *           or `-1`, if none exists.
     */
-  def lastIndexWhere(p: A => Boolean, end: Int = size - 1): Int = {
-    var i = size - 1
+  def lastIndexWhere(p: A => Boolean, end: Int = length - 1): Int = {
+    var i = length - 1
     val it = reverseIterator()
     while (it.hasNext && { val elem = it.next(); (i > end || !p(elem)) }) i -= 1
     i
@@ -375,29 +366,31 @@ trait SeqOps[+A, +CC[_], +C] extends Any
    *           match the elements of sequence `that`, or `-1` of no such subsequence exists.
    */
   // TODO Should be implemented in a way that preserves laziness
-  def indexOfSlice[B >: A](that: Seq[B], from: Int = 0): Int = {
-    val l = knownSize
-    val tl = that.knownSize
-    if (l >= 0 && tl >= 0) {
-      val clippedFrom = math.max(0, from)
-      if (from > l) -1
-      else if (tl < 1) clippedFrom
-      else if (l < tl) -1
-      else SeqOps.kmpSearch(toSeq, clippedFrom, l, that, 0, tl, forward = true)
-    }
+  def indexOfSlice[B >: A](that: Seq[B], from: Int = 0): Int =
+    if (that.isEmpty && from == 0) 0
     else {
-      var i = from
-      var s: Seq[A] = toSeq drop i
-      while (!s.isEmpty) {
-        if (s startsWith that)
-          return i
-
-        i += 1
-        s = s.tail
+      val l = knownSize
+      val tl = that.knownSize
+      if (l >= 0 && tl >= 0) {
+        val clippedFrom = math.max(0, from)
+        if (from > l) -1
+        else if (tl < 1) clippedFrom
+        else if (l < tl) -1
+        else SeqOps.kmpSearch(toSeq, clippedFrom, l, that, 0, tl, forward = true)
       }
-      -1
+      else {
+        var i = from
+        var s: Seq[A] = toSeq drop i
+        while (!s.isEmpty) {
+          if (s startsWith that)
+            return i
+
+          i += 1
+          s = s.tail
+        }
+        -1
+      }
     }
-  }
 
   /** Finds last index before or at a given end index where this $coll contains a given sequence as a slice.
    *  @param  that    the sequence to test
@@ -405,9 +398,9 @@ trait SeqOps[+A, +CC[_], +C] extends Any
    *  @return  the last index `<= end` such that the elements of this $coll starting at this index
    *           match the elements of sequence `that`, or `-1` of no such subsequence exists.
    */
-  def lastIndexOfSlice[B >: A](that: Seq[B], end: Int = size - 1): Int = {
-    val l = size
-    val tl = that.size
+  def lastIndexOfSlice[B >: A](that: Seq[B], end: Int = length - 1): Int = {
+    val l = length
+    val tl = that.length
     val clippedL = math.min(l-tl, end)
 
     if (end < 0) -1
@@ -434,7 +427,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
   def contains[A1 >: A](elem: A1): Boolean = exists (_ == elem)
 
   @deprecated("Use .reverseIterator().map(f).to(...) instead of .reverseMap(f)", "2.13.0")
-  def reverseMap[B](f: A => B): CC[B] = fromIterable(View.Map(View.fromIteratorProvider(() => reverseIterator()), f))
+  def reverseMap[B](f: A => B): CC[B] = fromIterable(new View.Map(View.fromIteratorProvider(() => reverseIterator()), f))
 
   /** Iterates over distinct permutations.
     *
@@ -505,7 +498,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
 
     private[this] def init() = {
       val m = mutable.HashMap[A, Int]()
-      val (es, is) = (toSeq map (e => (e, m.getOrElseUpdate(e, m.size))) sortBy (_._2)).unzip
+      val (es, is) = (self.toSeq map (e => (e, m.getOrElseUpdate(e, m.size))) sortBy (_._2)).unzip
 
       (es.to(mutable.ArrayBuffer), is.toArray)
     }
@@ -513,7 +506,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
 
   private class CombinationsItr(n: Int) extends Iterator[C] {
     // generating all nums such that:
-    // (1) nums(0) + .. + nums(size-1) = n
+    // (1) nums(0) + .. + nums(length-1) = n
     // (2) 0 <= nums(i) <= cnts(i), where 0 <= i <= cnts.length-1
     private val (elms, cnts, nums) = init()
     private val offs = cnts.scanLeft(0)(_ + _)
@@ -566,7 +559,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
       val m = mutable.HashMap[A, Int]()
 
       // e => (e, weight(e))
-      val (es, is) = (toSeq map (e => (e, m.getOrElseUpdate(e, m.size))) sortBy (_._2)).unzip
+      val (es, is) = (self.toSeq map (e => (e, m.getOrElseUpdate(e, m.size))) sortBy (_._2)).unzip
       val cs = new Array[Int](m.size)
       is foreach (i => cs(i) += 1)
       val ns = new Array[Int](cs.length)
@@ -583,7 +576,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
   /** Sorts this $coll according to an Ordering.
     *
     *  The sort is stable. That is, elements that are equal (as determined by
-    *  `lt`) appear in the same order in the sorted sequence as in the original.
+    *  `ord.compare`) appear in the same order in the sorted sequence as in the original.
     *
     *  @see [[scala.math.Ordering]]
     *
@@ -592,7 +585,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
     *              sorted according to the ordering `ord`.
     */
   def sorted[B >: A](implicit ord: Ordering[B]): C = {
-    val len = this.size
+    val len = this.length
     val b = newSpecificBuilder()
     if (len == 1) b ++= toIterable
     else if (len > 1) {
@@ -632,9 +625,13 @@ trait SeqOps[+A, +CC[_], +C] extends Any
   def sortWith(lt: (A, A) => Boolean): C = sorted(Ordering.fromLessThan(lt))
 
   /** Sorts this $coll according to the Ordering which results from transforming
-    *  an implicitly given Ordering with a transformation function.
+    * an implicitly given Ordering with a transformation function.
+    * $willNotTerminateInf
+    *
+    * The sort is stable. That is, elements that are equal (as determined by
+    * `ord.compare`) appear in the same order in the sorted sequence as in the original.
+    *
     *  @see [[scala.math.Ordering]]
-    *  $willNotTerminateInf
     *  @param   f the transformation function mapping elements
     *           to some other domain `B`.
     *  @param   ord the ordering assumed on domain `B`.
@@ -647,7 +644,7 @@ trait SeqOps[+A, +CC[_], +C] extends Any
     *  @example {{{
     *    val words = "The quick brown fox jumped over the lazy dog".split(' ')
     *    // this works because scala.Ordering will implicitly provide an Ordering[Tuple2[Int, Char]]
-    *    words.sortBy(x => (x.size, x.head))
+    *    words.sortBy(x => (x.length, x.head))
     *    res0: Array[String] = Array(The, dog, fox, the, lazy, over, brown, quick, jumped)
     *  }}}
     */
@@ -657,20 +654,20 @@ trait SeqOps[+A, +CC[_], +C] extends Any
     *
     *  @return  a `Range` value from `0` to one less than the length of this $coll.
     */
-  def indices: Range = Range(0, size)
+  def indices: Range = Range(0, length)
 
   /** Compares the length of this $coll to a test value.
     *
     *   @param   len   the test value that gets compared with the length.
     *   @return  A value `x` where
     *   {{{
-    *        x <  0       if this.size <  len
-    *        x == 0       if this.size == len
-    *        x >  0       if this.size >  len
+    *        x <  0       if this.length <  len
+    *        x == 0       if this.length == len
+    *        x >  0       if this.length >  len
     *   }}}
-    *  The method as implemented here does not call `size` directly; its running time
-    *  is `O(size min len)` instead of `O(size)`. The method should be overwritten
-    *  if computing `size` is cheap.
+    *  The method as implemented here does not call `length` directly; its running time
+    *  is `O(length min len)` instead of `O(length)`. The method should be overwritten
+    *  if computing `length` is cheap.
     */
   def lengthCompare(len: Int): Int = {
     if (len < 0) 1
@@ -687,7 +684,6 @@ trait SeqOps[+A, +CC[_], +C] extends Any
   }
 
   override def isEmpty: Boolean = lengthCompare(0) == 0
-  override def nonEmpty: Boolean = lengthCompare(0) != 0
 
   /** Are the elements of this collection the same (and in the same order)
     * as those of `that`?
@@ -717,15 +713,14 @@ trait SeqOps[+A, +CC[_], +C] extends Any
   /** Computes the multiset difference between this $coll and another sequence.
     *
     *  @param that   the sequence of elements to remove
-    *  @tparam B     the element type of the returned $coll.
-    *  @return       a new collection of type `That` which contains all elements of this $coll
+    *  @return       a new $coll which contains all elements of this $coll
     *                except some of occurrences of elements that also appear in `that`.
     *                If an element value `x` appears
     *                ''n'' times in `that`, then the first ''n'' occurrences of `x` will not form
     *                part of the result, but any following occurrences will.
     *  $willNotTerminateInf
     */
-  def diff[B >: A](that: Seq[B]): C = {
+  def diff(that: Seq[_ >: A]): C = {
     val occ = occCounts(that)
     //TODO diff and intersect could have efficient lazy implementations if fromSpecificIterable accepted an IterableOnce, i.e. it guaranteed doing only a single traversal
     val b = newSpecificBuilder()
@@ -740,15 +735,14 @@ trait SeqOps[+A, +CC[_], +C] extends Any
   /** Computes the multiset intersection between this $coll and another sequence.
     *
     *  @param that   the sequence of elements to intersect with.
-    *  @tparam B     the element type of the returned $coll.
-    *  @return       a new collection of type `That` which contains all elements of this $coll
+    *  @return       a new $coll which contains all elements of this $coll
     *                which also appear in `that`.
     *                If an element value `x` appears
     *                ''n'' times in `that`, then the first ''n'' occurrences of `x` will be retained
     *                in the result, but any following occurrences will be omitted.
     *  $mayNotTerminateInf
     */
-  def intersect[B >: A](that: Seq[B]): C = {
+  def intersect(that: Seq[_ >: A]): C = {
     val occ = occCounts(that)
     val b = newSpecificBuilder()
     for (x <- this) {
@@ -776,9 +770,9 @@ trait SeqOps[+A, +CC[_], +C] extends Any
     *                   by all the elements of `other`.
     */
   def patch[B >: A](from: Int, other: IterableOnce[B], replaced: Int): CC[B] =
-    fromIterable(new View.Patched(toIterable, from, other, replaced))
+    fromIterable(new View.Patched(this, from, other, replaced))
 
-  private[this] def occCounts[B](sq: Seq[B]): mutable.HashMap[B, Int] = {
+  private[this] def occCounts[B](sq: Seq[B]): mutable.Map[B, Int] = {
     val occ = new mutable.HashMap[B, Int] { override def default(k: B) = 0 }
     for (y <- sq) occ(y) += 1
     occ
@@ -946,13 +940,13 @@ object SeqOps {
   private def kmpOptimizeWord[B](W: Seq[B], n0: Int, n1: Int, forward: Boolean): IndexedView[B] = W match {
     case iso: IndexedSeq[B] =>
       // Already optimized for indexing--use original (or custom view of original)
-      if (forward && n0==0 && n1==W.size) iso.view
+      if (forward && n0==0 && n1==W.length) iso.view
       else if (forward) new IndexedView[B] {
-        protected val finiteSize = n1 - n0
+        val length = n1 - n0
         def apply(x: Int) = iso(n0 + x)
       }
       else new IndexedView[B] {
-        protected val finiteSize = n1 - n0
+        def length = n1 - n0
         def apply(x: Int) = iso(n1 - 1 - x)
       }
     case _ =>
@@ -969,7 +963,7 @@ object SeqOps {
           i += delta
         }
 
-        protected val finiteSize = n1 - n0
+        val length = n1 - n0
         def apply(x: Int) = Warr(x).asInstanceOf[B]
       }
   }

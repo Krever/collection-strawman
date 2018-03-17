@@ -3,7 +3,7 @@ package mutable
 
 import scala.annotation.unchecked.uncheckedVariance
 import scala.annotation.tailrec
-import scala.{Any, Boolean, Int, Unit, throws, Serializable, SerialVersionUID}
+import scala.{Any, Boolean, Int, math, Unit, throws, Serializable, SerialVersionUID}
 import scala.Int._
 import strawman.collection
 import strawman.collection.immutable.{List, Nil, ::}
@@ -18,7 +18,7 @@ import scala.Predef.{assert, intWrapper}
   *  @author  Martin Odersky
   *  @version 2.8
   *  @since   1
-  *  @see [[http://docs.scala-lang.org/overviews/collections/concrete-mutable-collection-classes.html#list_buffers "Scala's Collection Library overview"]]
+  *  @see [[http://docs.scala-lang.org/overviews/collections/concrete-mutable-collection-classes.html#list-buffers "Scala's Collection Library overview"]]
   *  section on `List Buffers` for more information.
   *
   *  @tparam A    the type of this list buffer's elements.
@@ -30,7 +30,7 @@ import scala.Predef.{assert, intWrapper}
   *  @define mayNotTerminateInf
   *  @define willNotTerminateInf
   */
-@SerialVersionUID(3419063961353022662L)
+@SerialVersionUID(3L)
 class ListBuffer[A]
   extends Buffer[A]
      with SeqOps[A, ListBuffer, ListBuffer[A]]
@@ -47,20 +47,15 @@ class ListBuffer[A]
 
   def iterator() = first.iterator()
 
-  def iterableFactory: SeqFactory[ListBuffer] = ListBuffer
-
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[A]): ListBuffer[A] = fromIterable(coll)
+  override def iterableFactory: SeqFactory[ListBuffer] = ListBuffer
 
   @throws[IndexOutOfBoundsException]
   def apply(i: Int) = first.apply(i)
 
-  override def size = len
+  def length = len
   override def knownSize = len
 
   override def isEmpty: Boolean = len == 0
-  override def nonEmpty: Boolean = len > 0
-
-  protected[this] def newSpecificBuilder(): Builder[A, ListBuffer[A]] = ListBuffer.newBuilder()
 
   private def copyElems(): Unit = {
     val buf = ListBuffer.from(this)
@@ -161,14 +156,14 @@ class ListBuffer[A]
 
   def update(idx: Int, elem: A): Unit = {
     ensureUnaliased()
-    if (idx < 0 || idx >= len) throw new IndexOutOfBoundsException
+    if (idx < 0 || idx >= len) throw new IndexOutOfBoundsException(idx.toString)
     val p = locate(idx)
     setNext(p, elem :: getNext(p).tail)
   }
 
   def insert(idx: Int, elem: A): Unit = {
     ensureUnaliased()
-    if (idx < 0 || idx > len) throw new IndexOutOfBoundsException
+    if (idx < 0 || idx > len) throw new IndexOutOfBoundsException(idx.toString)
     if (idx == len) +=(elem)
     else {
       val p = locate(idx)
@@ -199,7 +194,7 @@ class ListBuffer[A]
     val it = elems.iterator()
     if (it.hasNext) {
       ensureUnaliased()
-      if (idx < 0 || idx > len) throw new IndexOutOfBoundsException
+      if (idx < 0 || idx > len) throw new IndexOutOfBoundsException(idx.toString)
       if (idx == len) ++=(elems)
       else insertAfter(locate(idx), it)
     }
@@ -207,7 +202,7 @@ class ListBuffer[A]
 
   def remove(idx: Int): A = {
     ensureUnaliased()
-    if (idx < 0 || idx >= len) throw new IndexOutOfBoundsException
+    if (idx < 0 || idx >= len) throw new IndexOutOfBoundsException(idx.toString)
     val p = locate(idx)
     val nx = getNext(p)
     setNext(p, nx.tail)
@@ -218,7 +213,7 @@ class ListBuffer[A]
   def remove(idx: Int, count: Int): Unit =
     if (count > 0) {
       ensureUnaliased()
-      if (idx < 0 || idx + count > len) throw new IndexOutOfBoundsException
+      if (idx < 0 || idx + count > len) throw new IndexOutOfBoundsException(idx.toString)
       removeAfter(locate(idx), count)
     } else if (count < 0) {
       throw new IllegalArgumentException("removing negative number of elements: " + count)
@@ -272,9 +267,11 @@ class ListBuffer[A]
   }
 
   def patchInPlace(from: Int, patch: collection.Seq[A], replaced: Int): this.type = {
+    val i = math.min(math.max(from, 0), length)
+    val n = math.min(math.max(replaced, 0), length)
     ensureUnaliased()
-    val p = locate(from)
-    removeAfter(p, replaced `min` (len - from))
+    val p = locate(i)
+    removeAfter(p, math.min(n, len - i))
     insertAfter(p, patch.iterator())
     this
   }

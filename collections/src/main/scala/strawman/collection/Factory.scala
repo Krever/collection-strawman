@@ -72,10 +72,7 @@ object Factory {
   * @define coll collection
   * @define Coll `Iterable`
   */
-trait IterableFactoryLike[+CC[_]] {
-
-  /** Type of a source collection to build from */
-  type Source[A] >: Iterable[A]
+trait IterableFactory[+CC[_]] {
 
   /** Creates a target $coll from an existing source collection
     *
@@ -83,7 +80,7 @@ trait IterableFactoryLike[+CC[_]] {
     * @tparam A the type of the collection’s elements
     * @return a new $coll with the elements of `source`
     */
-  def from[A](source: Source[A]): CC[A]
+  def from[A](source: IterableOnce[A]): CC[A]
 
   /** An empty collection
     * @tparam A      the type of the ${coll}'s elements
@@ -95,7 +92,7 @@ trait IterableFactoryLike[+CC[_]] {
     * @param elems  the elements of the created $coll
     * @return a new $coll with elements `elems`
     */
-  def apply[A](elems: A*): CC[A] = from(View.Elems(elems: _*))
+  def apply[A](elems: A*): CC[A] = from(new View.Elems(elems: _*))
 
   /** Produces a $coll containing repeated applications of a function to a start value.
     *
@@ -133,7 +130,7 @@ trait IterableFactoryLike[+CC[_]] {
     *  @param   elem the element computation
     *  @return  A $coll that contains the results of `n` evaluations of `elem`.
     */
-  def fill[A](n: Int)(elem: => A): CC[A] = from(View.Fill(n)(elem))
+  def fill[A](n: Int)(elem: => A): CC[A] = from(new View.Fill(n)(elem))
 
   /** Produces a two-dimensional $coll containing the results of some element computation a number of times.
     *  @param   n1  the number of elements in the 1st dimension
@@ -227,20 +224,6 @@ trait IterableFactoryLike[+CC[_]] {
     */
   def tabulate[A](n1: Int, n2: Int, n3: Int, n4: Int, n5: Int)(f: (Int, Int, Int, Int, Int) => A): CC[CC[CC[CC[CC[A]]]] @uncheckedVariance] =
     tabulate(n1)(i1 => tabulate(n2, n3, n4, n5)(f(i1, _, _, _, _)))
-}
-
-/** Base trait for companion objects of unconstrained collection types that can
-  * build a target collection `CC` from a source collection with a single traversal
-  * of the source.
-  *
-  * @tparam CC Collection type constructor (e.g. `List`)
-  */
-trait IterableFactory[+CC[_]] extends IterableFactoryLike[CC] {
-
-  // Since most collection factories can build a target collection instance by performing only one
-  // traversal of a source collection, the type of this source collection can be refined to be
-  // just `IterableOnce`
-  type Source[A] = IterableOnce[A]
 
   implicit def iterableFactory[A]: Factory[A, CC[A]] = IterableFactory.toFactory(this)
 
@@ -260,12 +243,6 @@ object IterableFactory {
     new Factory[A, CC[A]] {
       def fromSpecific(it: IterableOnce[A]): CC[A] = factory.from[A](it)
       def newBuilder(): Builder[A, CC[A]] = factory.newBuilder[A]()
-    }
-
-  implicit def toBuildFrom[A, CC[_]](factory: IterableFactory[CC]): BuildFrom[Any, A, CC[A]] =
-    new BuildFrom[Any, A, CC[A]] {
-      def fromSpecificIterable(from: Any)(it: Iterable[A]) = factory.from(it)
-      def newBuilder(from: Any) = factory.newBuilder()
     }
 
   class Delegate[CC[_]](delegate: IterableFactory[CC]) extends IterableFactory[CC] {
@@ -329,9 +306,11 @@ trait StrictOptimizedSeqFactory[+CC[_]] extends SeqFactory[CC] {
   */
 trait SpecificIterableFactory[-A, +C] extends Factory[A, C] {
   def empty: C
-  def apply(xs: A*): C = fromSpecific(View.Elems(xs: _*))
-  def fill(n: Int)(elem: => A): C = fromSpecific(View.Fill(n)(elem))
+  def apply(xs: A*): C = fromSpecific(new View.Elems(xs: _*))
+  def fill(n: Int)(elem: => A): C = fromSpecific(new View.Fill(n)(elem))
   def newBuilder(): Builder[A, C]
+
+  implicit def specificIterableFactory: Factory[A, C] = this
 }
 
 /**
@@ -404,14 +383,14 @@ trait EvidenceIterableFactory[+CC[_], Ev[_]] {
 
   def empty[A : Ev]: CC[A]
 
-  def apply[A : Ev](xs: A*): CC[A] = from(View.Elems(xs: _*))
+  def apply[A : Ev](xs: A*): CC[A] = from(new View.Elems(xs: _*))
 
   /** Produces a $coll containing the results of some element computation a number of times.
     *  @param   n  the number of elements contained in the $coll.
     *  @param   elem the element computation
     *  @return  A $coll that contains the results of `n` evaluations of `elem`.
     */
-  def fill[A : Ev](n: Int)(elem: => A): CC[A] = from(View.Fill(n)(elem))
+  def fill[A : Ev](n: Int)(elem: => A): CC[A] = from(new View.Fill(n)(elem))
 
   /** Produces a $coll containing values of a given function over a range of integer values starting from 0.
     *  @param  n   The number of elements in the $coll

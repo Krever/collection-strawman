@@ -1,6 +1,6 @@
 package strawman.collection
 
-import scala.{Any, Array, Char, Ordering, `inline`, deprecated}
+import scala.{Any, Array, Char, Int, Ordering, `inline`, deprecated}
 import scala.Predef.String
 import strawman.collection.mutable.Builder
 import scala.annotation.implicitNotFound
@@ -56,6 +56,18 @@ object BuildFrom extends BuildFromLowPriority {
     new BuildFrom[Array[_], A, Array[A]] {
       def fromSpecificIterable(from: Array[_])(it: Iterable[A]): Array[A] = Factory.arrayFactory[A].fromSpecific(it)
       def newBuilder(from: Array[_]): Builder[A, Array[A]] = Factory.arrayFactory[A].newBuilder()
+    }
+
+  implicit def buildFromView[A, B]: BuildFrom[View[A], B, View[B]] =
+    new BuildFrom[View[A], B, View[B]] {
+      def fromSpecificIterable(from: View[A])(it: Iterable[B]): View[B] = View.from(it)
+      def newBuilder(from: View[A]): Builder[B, View[B]] = View.newBuilder()
+    }
+
+  implicit def buildFromBitSet[C <: BitSet with BitSetOps[C]]: BuildFrom[C, Int, C] =
+    new BuildFrom[C, Int, C] {
+      def fromSpecificIterable(from: C)(it: Iterable[Int]): C = from.bitSetFactory.fromSpecific(it)
+      def newBuilder(from: C): Builder[Int, C] = from.bitSetFactory.newBuilder()
     }
 
 }

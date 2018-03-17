@@ -4,10 +4,11 @@ package immutable
 
 import strawman.collection.mutable.{ArrayBuffer, Builder}
 
-import scala.{Any, AnyRef, Boolean, Int, None, NoSuchElementException, noinline, Nothing, Option, PartialFunction, Some, StringContext, Unit, UnsupportedOperationException, deprecated}
+import scala.{Any, AnyRef, Boolean, Int, NoSuchElementException, None, Nothing, Option, PartialFunction, Some, StringBuilder, StringContext, Unit, UnsupportedOperationException, deprecated, noinline}
 import scala.Predef.String
 import scala.annotation.tailrec
 import scala.annotation.unchecked.uncheckedVariance
+import scala.collection.mutable.StringBuilder
 
 /**  The class `LazyList` implements lazy lists where elements
   *  are only evaluated when they are needed. Here is an example:
@@ -184,12 +185,7 @@ import scala.annotation.unchecked.uncheckedVariance
   *  @define orderDependentFold
   */
 sealed abstract class LazyList[+A] extends LinearSeq[A] with LazyListOps[A, LazyList, LazyList[A]] {
-  def iterableFactory: LazyListFactory[LazyList] = LazyList
-
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[A]): LazyList[A] = fromIterable(coll)
-
-  protected[this] def newSpecificBuilder(): Builder[A, LazyList[A]] =
-    IndexedSeq.newBuilder().mapResult(_.to(LazyList))
+  override def iterableFactory: LazyListFactory[LazyList] = LazyList
 
   protected[this] def cons[T](hd: => T, tl: => LazyList[T]): LazyList[T] = new LazyList.Cons(hd, tl)
 
@@ -225,9 +221,11 @@ sealed abstract class LazyList[+A] extends LinearSeq[A] with LazyListOps[A, Lazy
     if (this.isEmpty) z
     else tail.foldLeft(op(z, head))(op)
   }
+
 }
 
-sealed private[immutable] trait LazyListOps[+A, +CC[+X] <: LinearSeq[X] with LazyListOps[X, CC, CC[X]], +C <: CC[A]] extends LinearSeqOps[A, CC, C] {
+sealed private[immutable] trait LazyListOps[+A, +CC[+X] <: LinearSeq[X] with LazyListOps[X, CC, CC[X]], +C <: CC[A] with LazyListOps[A, CC, C]]
+  extends LinearSeqOps[A, CC, C] {
 
   def iterableFactory: LazyListFactory[CC]
 
@@ -235,10 +233,16 @@ sealed private[immutable] trait LazyListOps[+A, +CC[+X] <: LinearSeq[X] with Laz
 
   protected[this] def cons[T](hd: => T, tl: => CC[T]): CC[T]
 
-  /** Force the evaluation of both the head and the tail of this `LazyList` */
-  def force: Option[(A, CC[A])]
-
-  override def nonEmpty: Boolean = !isEmpty
+  /** Forces evaluation of the whole `LazyList` and returns it.
+    *
+    * @note Often we use `LazyList`s to represent an infinite set or series.  If
+    * that's the case for your particular `LazyList` then this function will never
+    * return and will probably crash the VM with an `OutOfMemory` exception.
+    * This function will not hang on a finite cycle, however.
+    *
+    *  @return The fully realized `LazyList`.
+    */
+  def force: this.type
 
   /** The stream resulting from the concatenation of this stream with the argument stream.
     *
@@ -246,27 +250,12 @@ sealed private[immutable] trait LazyListOps[+A, +CC[+X] <: LinearSeq[X] with Laz
     * @return The lazy list containing elements of this lazy list and the iterable object.
     */
   def lazyAppendAll[B >: A](suffix: => collection.IterableOnce[B]): CC[B] =
-    if (isEmpty) iterableFactory.from(suffix.iterator()) else cons[B](head, tail.lazyAppendAll(suffix))
+    if (isEmpty) iterableFactory.from(suffix) else cons[B](head, tail.lazyAppendAll(suffix))
 
   override def className = "LazyList"
 
   override def equals(that: Any): Boolean =
     if (this eq that.asInstanceOf[AnyRef]) true else super.equals(that)
-
-  override def sameElements[B >: A](that: IterableOnce[B]): Boolean = {
-    @tailrec def lazyListEq(a: CC[_], b: CC[_]): Boolean =
-      if (a eq b) true else {
-        (a.force, b.force) match {
-          case (Some((ah, at)), Some((bh, bt))) => (ah == bh) && lazyListEq(at, bt)
-          case (None, None) => true
-          case _ => false
-        }
-      }
-    that match {
-      case that: LazyListOps[_, _, _] => lazyListEq(coll, that.asInstanceOf[CC[_]])
-      case _ => super.sameElements(that)
-    }
-  }
 
   override def scanLeft[B](z: B)(op: (B, A) => B): CC[B] =
     if (isEmpty) z +: iterableFactory.empty
@@ -311,7 +300,7 @@ sealed private[immutable] trait LazyListOps[+A, +CC[+X] <: LinearSeq[X] with Laz
   /** A FilterMonadic which allows GC of the head of stream during processing */
   @noinline // Workaround scala/bug#9137, see https://github.com/scala/scala/pull/4284#issuecomment-73180791
   override final def withFilter(p: A => Boolean): collection.WithFilter[A, CC] =
-  iterableFactory.withFilter(coll, p)
+    iterableFactory.withFilter(coll, p)
 
   override final def prepended[B >: A](elem: B): CC[B] = cons(elem, coll)
 
@@ -340,26 +329,138 @@ sealed private[immutable] trait LazyListOps[+A, +CC[+X] <: LinearSeq[X] with Laz
   // optimisations are not for speed, but for functionality
   // see tickets #153, #498, #2147, and corresponding tests in run/ (as well as run/stream_flatmap_odds.scala)
   override final def flatMap[B](f: A => IterableOnce[B]): CC[B] =
-  if (isEmpty) iterableFactory.empty
-  else {
-    // establish !prefix.isEmpty || nonEmptyPrefix.isEmpty
-    var nonEmptyPrefix: CC[A] = coll
-    var prefix = iterableFactory.from(f(nonEmptyPrefix.head).iterator())
-    while (!nonEmptyPrefix.isEmpty && prefix.isEmpty) {
-      nonEmptyPrefix = nonEmptyPrefix.tail
-      if(!nonEmptyPrefix.isEmpty)
-        prefix = iterableFactory.from(f(nonEmptyPrefix.head).iterator())
-    }
+    if (isEmpty) iterableFactory.empty
+    else {
+      // establish !prefix.isEmpty || nonEmptyPrefix.isEmpty
+      var nonEmptyPrefix: CC[A] = coll
+      var prefix = iterableFactory.from(f(nonEmptyPrefix.head))
+      while (!nonEmptyPrefix.isEmpty && prefix.isEmpty) {
+        nonEmptyPrefix = nonEmptyPrefix.tail
+        if(!nonEmptyPrefix.isEmpty)
+          prefix = iterableFactory.from(f(nonEmptyPrefix.head))
+      }
 
-    if (nonEmptyPrefix.isEmpty) iterableFactory.empty
-    else prefix.lazyAppendAll(nonEmptyPrefix.tail.flatMap(f))
-  }
+      if (nonEmptyPrefix.isEmpty) iterableFactory.empty
+      else prefix.lazyAppendAll(nonEmptyPrefix.tail.flatMap(f))
+    }
 
   override final def zip[B](that: collection.Iterable[B]): CC[(A, B)] =
     if (this.isEmpty || that.isEmpty) iterableFactory.empty
     else cons[(A, B)]((this.head, that.head), this.tail.zip(that.tail))
 
   override final def zipWithIndex: CC[(A, Int)] = this.zip(LazyList.from(0))
+
+  protected def headDefined: Boolean
+  protected def tailDefined: Boolean
+
+  /**
+    * @return a string representation of this collection. Undefined elements are
+    *         represented with `"_"`, an undefined tail is represented with `"?"`,
+    *         and cycles are represented with `"..."`
+    *
+    *         Examples:
+    *
+    *           - `"LazyList(_, ?)"`, a non-empty lazy list, whose head has not been
+    *             evaluated ;
+    *           - `"LazyList(_, 1, _, ?)"`, a lazy list with at least three elements,
+    *             the second one has been evaluated ;
+    *           - `"LazyList(1, 2, 3, ...)"`, an infinite lazy list that contains
+    *             a cycle at the fourth element.
+    */
+  override def toString: String = {
+    /** Write all defined elements of this iterable into given string builder.
+      *  The written text begins with the string `start` and is finished by the string
+      *  `end`. Inside, the string representations of defined elements (w.r.t.
+      *  the method `toString()`) are separated by the string `sep`. The method will
+      *  not force evaluation of undefined elements. Undefined heads will be represented
+      *  by a `"_"`. An undefined tail is
+      * represented by a `"?"`.  A cyclic stream is represented by a `"..."`
+      * at the point where the cycle repeats.
+      *
+      * @param b The [[collection.mutable.StringBuilder]] factory to which we need
+      * to add the string elements.
+      * @param start The prefix of the resulting string (e.g. "LazyList(")
+      * @param sep The separator between elements of the resulting string (e.g. ",")
+      * @param end The end of the resulting string (e.g. ")")
+      * @return The original [[collection.mutable.StringBuilder]] containing the
+      * resulting string.
+      */
+    def toStringBuilder(b: StringBuilder, start: String, sep: String, end: String): StringBuilder = {
+      b append start
+      if (nonEmpty) {
+        if (headDefined) b append head else b append "_"
+        var cursor = this
+        def appendCursorElement(): Unit = {
+          b append sep
+          if (cursor.headDefined) b append cursor.head else b append "_"
+        }
+        if (tailDefined) {  // If tailDefined, also !isEmpty
+          var scout = tail
+          if (cursor ne scout) {
+            cursor = scout
+            if (scout.tailDefined) {
+              scout = scout.tail
+              // Use 2x 1x iterator trick for cycle detection; slow iterator can add strings
+              while ((cursor ne scout) && scout.tailDefined) {
+                appendCursorElement()
+                cursor = cursor.tail
+                scout = scout.tail
+                if (scout.tailDefined) scout = scout.tail
+              }
+            }
+          }
+          if (!scout.tailDefined) {  // Not a cycle, scout hit an end
+            while (cursor ne scout) {
+              appendCursorElement()
+              cursor = cursor.tail
+            }
+            if (cursor.nonEmpty) {
+              appendCursorElement()
+            }
+          }
+          else {
+            // Cycle.
+            // If we have a prefix of length P followed by a cycle of length C,
+            // the scout will be at position (P%C) in the cycle when the cursor
+            // enters it at P.  They'll then collide when the scout advances another
+            // C - (P%C) ahead of the cursor.
+            // If we run the scout P farther, then it will be at the start of
+            // the cycle: (C - (P%C) + (P%C)) == C == 0.  So if another runner
+            // starts at the beginning of the prefix, they'll collide exactly at
+            // the start of the loop.
+            var runner = this
+            var k = 0
+            while (runner ne scout) {
+              runner = runner.tail
+              scout = scout.tail
+              k += 1
+            }
+            // Now runner and scout are at the beginning of the cycle.  Advance
+            // cursor, adding to string, until it hits; then we'll have covered
+            // everything once.  If cursor is already at beginning, we'd better
+            // advance one first unless runner didn't go anywhere (in which case
+            // we've already looped once).
+            if ((cursor eq scout) && (k > 0)) {
+              appendCursorElement()
+              cursor = cursor.tail
+            }
+            while (cursor ne scout) {
+              appendCursorElement()
+              cursor = cursor.tail
+            }
+          }
+        }
+        if (cursor.nonEmpty) {
+          // Either undefined or cyclic; we can check with tailDefined
+          if (!cursor.tailDefined) b append sep append "?"
+          else b append sep append "..."
+        }
+      }
+      b append end
+    }
+
+    s"$className${toStringBuilder(new StringBuilder, "(", ", ", ")").result()}"
+  }
 
 }
 
@@ -441,7 +542,6 @@ sealed private[immutable] trait LazyListFactory[+CC[+X] <: LinearSeq[X] with Laz
     newCons(head, stream.tail.collect(pf))
   }
 
-  type Evaluated[+A] <: Option[(A, CC[A])]
 }
 
 /**
@@ -453,14 +553,14 @@ object LazyList extends LazyListFactory[LazyList] {
 
   protected[this] def newCons[T](hd: => T, tl: => LazyList[T]): LazyList[T] = new LazyList.Cons(hd, tl)
 
-  type Evaluated[+A] = Option[(A, LazyList[A])]
-
   object Empty extends LazyList[Nothing] {
     override def isEmpty: Boolean = true
     override def head: Nothing = throw new NoSuchElementException("head of empty lazy list")
     override def tail: LazyList[Nothing] = throw new UnsupportedOperationException("tail of empty lazy list")
-    def force: Evaluated[Nothing] = None
-    override def toString: String = "Empty"
+    def force: this.type = this
+    override def knownSize: Int = 0
+    protected def tailDefined: Boolean = false
+    protected def headDefined: Boolean = false
   }
 
   final class Cons[A](hd: => A, tl: => LazyList[A]) extends LazyList[A] {
@@ -475,10 +575,28 @@ object LazyList extends LazyListFactory[LazyList] {
       tlEvaluated = true
       tl
     }
-    def force: Evaluated[A] = Some((head, tail))
-    override def toString: String =
-      if (hdEvaluated) s"$head #:: ${if (tlEvaluated) tail.toString else "?"}"
-      else "LazyList(?)"
+    def force: this.type = {
+      // Use standard 2x 1x iterator trick for cycle detection ("those" is slow one)
+      var these, those: LazyList[A] = this
+      if (!these.isEmpty) {
+        these.head
+        these = these.tail
+      }
+      while (those ne these) {
+        if (these.isEmpty) return this
+        these.head
+        these = these.tail
+        if (these.isEmpty) return this
+        these.head
+        these = these.tail
+        if (these eq those) return this
+        those = those.tail
+      }
+      this
+    }
+
+    protected def tailDefined: Boolean = tlEvaluated
+    protected def headDefined: Boolean = hdEvaluated
   }
 
   /** An alternative way of building and matching Streams using LazyList.cons(hd, tl).
@@ -506,7 +624,8 @@ object LazyList extends LazyListFactory[LazyList] {
   }
 
   object #:: {
-    def unapply[A](s: LazyList[A]): Evaluated[A] = s.force
+    def unapply[A](s: LazyList[A]): Option[(A, LazyList[A])] =
+      if (s.nonEmpty) Some((s.head, s.tail)) else None
   }
 
   def from[A](coll: collection.IterableOnce[A]): LazyList[A] = coll match {
@@ -535,12 +654,9 @@ object LazyList extends LazyListFactory[LazyList] {
 
 @deprecated("Use LazyList (which has a lazy head and tail) instead of Stream (which has a lazy tail only)", "2.13.0")
 sealed abstract class Stream[+A] extends LinearSeq[A] with LazyListOps[A, Stream, Stream[A]] {
-  def iterableFactory: LazyListFactory[Stream] = Stream
+  override def iterableFactory: LazyListFactory[Stream] = Stream
 
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[A]): Stream[A] = fromIterable(coll)
-
-  protected[this] def newSpecificBuilder(): Builder[A, Stream[A]] =
-    IndexedSeq.newBuilder().mapResult(_.to(Stream))
+  override def className: String = "Stream"
 
   protected[this] def cons[T](hd: => T, tl: => Stream[T]): Stream[T] = new Stream.Cons(hd, tl)
 
@@ -576,6 +692,7 @@ sealed abstract class Stream[+A] extends LinearSeq[A] with LazyListOps[A, Stream
     if (this.isEmpty) z
     else tail.foldLeft(op(z, head))(op)
   }
+
 }
 
 @deprecated("Use LazyList (which has a lazy head and tail) instead of Stream (which has a lazy tail only)", "2.13.0")
@@ -583,14 +700,23 @@ object Stream extends LazyListFactory[Stream] {
 
   protected[this] def newCons[T](hd: => T, tl: => Stream[T]): Stream[T] = new Stream.Cons(hd, tl)
 
-  type Evaluated[+A] = Option[(A, Stream[A])]
-
   object Empty extends Stream[Nothing] {
     override def isEmpty: Boolean = true
     override def head: Nothing = throw new NoSuchElementException("head of empty lazy list")
     override def tail: Stream[Nothing] = throw new UnsupportedOperationException("tail of empty lazy list")
-    def force: Evaluated[Nothing] = None
-    override def toString: String = "Empty"
+    /** Forces evaluation of the whole `Stream` and returns it.
+      *
+      * @note Often we use `Stream`s to represent an infinite set or series.  If
+      * that's the case for your particular `Stream` then this function will never
+      * return and will probably crash the VM with an `OutOfMemory` exception.
+      * This function will not hang on a finite cycle, however.
+      *
+      *  @return The fully realized `Stream`.
+      */
+    def force: this.type = this
+    override def knownSize: Int = 0
+    protected def headDefined: Boolean = false
+    protected def tailDefined: Boolean = false
   }
 
   final class Cons[A](override val head: A, tl: => Stream[A]) extends Stream[A] {
@@ -600,9 +726,32 @@ object Stream extends LazyListFactory[Stream] {
       tlEvaluated = true
       tl
     }
-    def force: Evaluated[A] = Some((head, tail))
-    override def toString: String =
-      s"$head #:: ${if (tlEvaluated) tail.toString else "?"}"
+    protected def headDefined: Boolean = true
+    protected def tailDefined: Boolean = tlEvaluated
+    /** Forces evaluation of the whole `Stream` and returns it.
+      *
+      * @note Often we use `Stream`s to represent an infinite set or series.  If
+      * that's the case for your particular `Stream` then this function will never
+      * return and will probably crash the VM with an `OutOfMemory` exception.
+      * This function will not hang on a finite cycle, however.
+      *
+      *  @return The fully realized `Stream`.
+      */
+    def force: this.type = {
+      // Use standard 2x 1x iterator trick for cycle detection ("those" is slow one)
+      var these, those: Stream[A] = this
+      if (!these.isEmpty) these = these.tail
+      while (those ne these) {
+        if (these.isEmpty) return this
+        these = these.tail
+        if (these.isEmpty) return this
+        these = these.tail
+        if (these eq those) return this
+        those = those.tail
+      }
+      this
+    }
+
   }
 
   /** An alternative way of building and matching Streams using Stream.cons(hd, tl).
@@ -630,7 +779,8 @@ object Stream extends LazyListFactory[Stream] {
   }
 
   object #:: {
-    def unapply[A](s: Stream[A]): Evaluated[A] = s.force
+    def unapply[A](s: Stream[A]): Option[(A, Stream[A])] =
+      if (s.nonEmpty) Some((s.head, s.tail)) else None
   }
 
   def from[A](coll: collection.IterableOnce[A]): Stream[A] = coll match {

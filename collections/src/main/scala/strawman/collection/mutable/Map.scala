@@ -4,7 +4,7 @@ package mutable
 
 import strawman.collection.{IterableOnce, MapFactory}
 
-import scala.{Boolean, None, Option, Some, Unit, `inline`, deprecated}
+import scala.{Boolean, None, Option, Serializable, SerialVersionUID, Some, Unit, `inline`, deprecated}
 
 /** Base type of mutable Maps */
 trait Map[K, V]
@@ -13,6 +13,8 @@ trait Map[K, V]
     with MapOps[K, V, Map, Map[K, V]]
     with Growable[(K, V)]
     with Shrinkable[K] {
+
+  override def mapFactory: strawman.collection.MapFactory[MapCC] = Map
 
   /*
   //TODO consider keeping `remove` because it returns the removed entry
@@ -57,8 +59,6 @@ trait MapOps[K, V, +CC[X, Y] <: MapOps[X, Y, CC, _], +C <: MapOps[K, V, CC, C]]
     with Cloneable[C]
     with Growable[(K, V)]
     with Shrinkable[K] {
-
-  def iterableFactory: IterableFactory[Iterable] = Iterable
 
   /** Adds a new key/value pair to this map and optionally returns previously bound value.
     *  If the map already contains a
@@ -121,16 +121,11 @@ trait MapOps[K, V, +CC[X, Y] <: MapOps[X, Y, CC, _], +C <: MapOps[K, V, CC, C]]
 
   def mapInPlace(f: ((K, V)) => (K, V)): this.type = {
     val toAdd = Map[K, V]()
-    val toRemove = Set[K]()
     for (elem <- this) {
-      val mapped = f(elem)
-      if (!contains(mapped._1)) {
-        toAdd += mapped
-        toRemove -= elem._1
-      }
+        toAdd += f(elem)
     }
-    for (elem <- toRemove) coll -= elem
-    for (elem <- toAdd) coll += elem
+    coll.clear()
+    coll ++= toAdd
     this
   }
 
@@ -173,14 +168,17 @@ trait MapOps[K, V, +CC[X, Y] <: MapOps[X, Y, CC, _], +C <: MapOps[K, V, CC, C]]
   */
 object Map extends MapFactory.Delegate[Map](HashMap) {
 
+  @SerialVersionUID(3L)
   class WithDefault[K, V](val underlying: Map[K, V], val defaultValue: K => V)
-    extends Map[K, V] with MapOps[K, V, Map, WithDefault[K, V]]{
+    extends Map[K, V]
+      with MapOps[K, V, Map, WithDefault[K, V]]
+      with Serializable {
 
     override def default(key: K): V = defaultValue(key)
 
     def iterator(): strawman.collection.Iterator[(K, V)] = underlying.iterator()
 
-    def mapFactory: MapFactory[Map] = underlying.mapFactory
+    override def mapFactory: MapFactory[Map] = underlying.mapFactory
 
     def clear(): Unit = underlying.clear()
 
@@ -190,16 +188,13 @@ object Map extends MapFactory.Delegate[Map](HashMap) {
 
     def addOne(elem: (K, V)): WithDefault.this.type = { underlying.addOne(elem); this }
 
-    def empty: WithDefault[K, V] = new WithDefault[K, V](underlying.empty, defaultValue)
+    override def empty: WithDefault[K, V] = new WithDefault[K, V](underlying.empty, defaultValue)
 
-    protected[this] def fromSpecificIterable(coll: strawman.collection.Iterable[(K, V)]): WithDefault[K, V] =
+    override protected[this] def fromSpecificIterable(coll: strawman.collection.Iterable[(K, V)]): WithDefault[K, V] =
       new WithDefault[K, V](mapFactory.from(coll), defaultValue)
 
-    protected[this] def newSpecificBuilder(): Builder[(K, V), WithDefault[K, V]] =
+    override protected[this] def newSpecificBuilder(): Builder[(K, V), WithDefault[K, V]] =
       Map.newBuilder().mapResult((p: Map[K, V]) => new WithDefault[K, V](p, defaultValue))
-
-    protected[this] def mapFromIterable[K2, V2](it: strawman.collection.Iterable[(K2, V2)]): Map[K2, V2] =
-      mapFactory.from(it)
   }
 
 }

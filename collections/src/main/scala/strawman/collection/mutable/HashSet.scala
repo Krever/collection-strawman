@@ -10,7 +10,7 @@ import scala.{Any, Boolean, Option, Serializable, SerialVersionUID, transient, U
   * @author  Martin Odersky
   * @version 2.0, 31/12/2006
   * @since   1
-  * @see [[http://docs.scala-lang.org/overviews/collections/concrete-mutable-collection-classes.html#hash_tables "Scala's Collection Library overview"]]
+  * @see [[http://docs.scala-lang.org/overviews/collections/concrete-mutable-collection-classes.html#hash-tables "Scala's Collection Library overview"]]
   * section on `Hash Tables` for more information.
   *
   * @define Coll `mutable.HashSet`
@@ -18,7 +18,7 @@ import scala.{Any, Boolean, Option, Serializable, SerialVersionUID, transient, U
   * @define mayNotTerminateInf
   * @define willNotTerminateInf
   */
-@SerialVersionUID(1L)
+@SerialVersionUID(3L)
 final class HashSet[A](contents: FlatHashTable.Contents[A])
   extends Set[A]
     with SetOps[A, HashSet, HashSet[A]]
@@ -31,11 +31,7 @@ final class HashSet[A](contents: FlatHashTable.Contents[A])
 
   override def iterator(): Iterator[A] = table.iterator
 
-  def iterableFactory = HashSet
-
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[A]): HashSet[A] = fromIterable(coll)
-
-  protected[this] def newSpecificBuilder(): Builder[A, HashSet[A]] = HashSet.newBuilder()
+  override def iterableFactory: IterableFactory[HashSet] = HashSet
 
   def addOne(elem: A): this.type = {
     table.addElem(elem)
@@ -49,8 +45,6 @@ final class HashSet[A](contents: FlatHashTable.Contents[A])
   def clear(): Unit = table.clearTable()
 
   def contains(elem: A): Boolean = table.containsElem(elem)
-
-  def empty: HashSet[A] = HashSet.empty
 
   def get(elem: A): Option[A] = table.findEntry(elem)
 

@@ -11,6 +11,8 @@ trait Buffer[A]
     with Growable[A]
     with Shrinkable[A] {
 
+  override def iterableFactory: SeqFactory[Buffer] = Buffer
+
   //TODO Prepend is a logical choice for a readable name of `+=:` but it conflicts with the renaming of `append` to `add`
   /** Prepends a single element at the front of this $coll.
     *
@@ -25,6 +27,15 @@ trait Buffer[A]
   /** Alias for `prepend` */
   @`inline` final def +=: (elem: A): this.type = prepend(elem)
 
+  def prependAll(elems: IterableOnce[A]): this.type = { insertAll(0, elems); this }
+
+  /** Inserts a new element at a given index into this buffer.
+    *
+    *  @param idx    the index where the new elements is inserted.
+    *  @param elem   the element to insert.
+    *  @throws   IndexOutOfBoundsException if the index `idx` is not in the valid range
+    *            `0 <= idx <= length`.
+    */
   @throws[IndexOutOfBoundsException]
   def insert(idx: Int, elem: A): Unit
 
@@ -110,7 +121,7 @@ trait Buffer[A]
     if (idx < 0) this else takeInPlace(idx)
   }
   def padToInPlace(len: Int, elem: A): this.type = {
-    while (size < len) +=(elem)
+    while (length < len) +=(elem)
     this
   }
 }
@@ -145,11 +156,16 @@ trait IndexedOptimizedBuffer[A] extends IndexedOptimizedSeq[A] with Buffer[A] {
   }
 
   def patchInPlace(from: Int, patch: strawman.collection.Seq[A], replaced: Int): this.type = {
-    val n = patch.size min replaced
-    var i = 0
-    while (i < n) { update(from + i, patch(i)); i += 1 }
-    if (i < patch.size) insertAll(from + i, patch.iterator().drop(i))
-    else if (i < replaced) remove(from + i, replaced - i)
+    val replaced0 = math.min(math.max(replaced, 0), length)
+    val i = math.min(math.max(from, 0), length)
+    var j = 0
+    val n = math.min(patch.length, replaced0)
+    while (j < n && i + j < length) {
+      update(i + j, patch(j))
+      j += 1
+    }
+    if (j < patch.length) insertAll(i + j, patch.iterator().drop(j))
+    else if (j < replaced0) remove(i + j, replaced0 - j)
     this
   }
 }

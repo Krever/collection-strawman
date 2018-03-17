@@ -9,7 +9,7 @@
 package strawman.collection
 package immutable
 
-import scala.{Int, None, Boolean, Unit, Any, AnyRef, Nothing, Array, Option, Some, IllegalArgumentException, `inline`}
+import scala.{Int, None, Boolean, Unit, Any, AnyRef, Nothing, Array, PartialFunction, Option, Serializable, SerialVersionUID, Some, IllegalArgumentException, `inline`}
 import java.lang.IllegalStateException
 import strawman.collection
 import strawman.collection.generic.BitOperations
@@ -51,6 +51,10 @@ object IntMap {
   def apply[T](elems: (Int, T)*): IntMap[T] =
     elems.foldLeft(empty[T])((x, y) => x.updated(y._1, y._2))
 
+  def from[V](coll: IterableOnce[(Int, V)]): IntMap[V] =
+    newBuilder[V]().addAll(coll).result()
+
+  @SerialVersionUID(3L)
   private[immutable] case object Nil extends IntMap[Nothing] {
     // Important! Without this equals method in place, an infinite
     // loop from Map.equals => size => pattern-match-on-Nil => equals
@@ -63,11 +67,14 @@ object IntMap {
     }
   }
 
+  @SerialVersionUID(3L)
   private[immutable] case class Tip[+T](key: Int, value: T) extends IntMap[T]{
     def withValue[S](s: S) =
       if (s.asInstanceOf[AnyRef] eq value.asInstanceOf[AnyRef]) this.asInstanceOf[IntMap.Tip[S]]
       else IntMap.Tip(key, s)
   }
+
+  @SerialVersionUID(3L)
   private[immutable] case class Bin[+T](prefix: Int, mask: Int, left: IntMap[T], right: IntMap[T]) extends IntMap[T] {
     def bin[S](left: IntMap[S], right: IntMap[S]): IntMap[S] = {
       if ((this.left eq left) && (this.right eq right)) this.asInstanceOf[IntMap.Bin[S]]
@@ -156,11 +163,13 @@ import IntMap._
   *  @define mayNotTerminateInf
   *  @define willNotTerminateInf
   */
+@SerialVersionUID(3L)
 sealed abstract class IntMap[+T] extends Map[Int, T]
   with MapOps[Int, T, Map, IntMap[T]]
-  with StrictOptimizedIterableOps[(Int, T), Iterable, IntMap[T]] {
+  with StrictOptimizedIterableOps[(Int, T), Iterable, IntMap[T]]
+  with Serializable {
 
-  protected[this] def fromSpecificIterable(coll: strawman.collection.Iterable[(Int, T)]): IntMap[T] =
+  override protected[this] def fromSpecificIterable(coll: strawman.collection.Iterable[(Int, T)]): IntMap[T] =
     intMapFromIterable[T](coll)
   protected[this] def intMapFromIterable[V2](coll: strawman.collection.Iterable[(Int, V2)]): IntMap[V2] = {
     val b = IntMap.newBuilder[V2]()
@@ -168,13 +177,10 @@ sealed abstract class IntMap[+T] extends Map[Int, T]
     b.addAll(coll)
     b.result()
   }
-  def iterableFactory: IterableFactoryLike[Iterable] = Iterable
-  protected[this] def newSpecificBuilder(): Builder[(Int, T), IntMap[T]] =
+  override protected[this] def newSpecificBuilder(): Builder[(Int, T), IntMap[T]] =
     new ImmutableBuilder[(Int, T), IntMap[T]](empty) {
       def addOne(elem: (Int, T)): this.type = { elems = elems + elem; this }
     }
-  def mapFactory: MapFactory[Map] = Map
-  protected[this] def mapFromIterable[K2, V2](it: strawman.collection.Iterable[(K2, V2)]): Map[K2,V2] = mapFactory.from(it)
 
   override def empty: IntMap[T] = IntMap.Nil
 
@@ -297,12 +303,17 @@ sealed abstract class IntMap[+T] extends Map[Int, T]
     case IntMap.Nil => IntMap.Tip(key, value)
   }
 
-  def map[V2](f: ((Int, T)) => (Int, V2)): IntMap[V2] = intMapFromIterable(View.Map(toIterable, f))
+  def map[V2](f: ((Int, T)) => (Int, V2)): IntMap[V2] = intMapFromIterable(new View.Map(toIterable, f))
 
-  def flatMap[V2](f: ((Int, T)) => IterableOnce[(Int, V2)]): IntMap[V2] = intMapFromIterable(View.FlatMap(toIterable, f))
+  def flatMap[V2](f: ((Int, T)) => IterableOnce[(Int, V2)]): IntMap[V2] = intMapFromIterable(new View.FlatMap(toIterable, f))
 
-  override def concat [V1 >: T](that: collection.Iterable[(Int, V1)]): IntMap[V1] =
+  override def concat[V1 >: T](that: collection.Iterable[(Int, V1)]): IntMap[V1] =
     super.concat(that).asInstanceOf[IntMap[V1]] // Already has corect type but not declared as such
+
+  override def ++ [V1 >: T](that: collection.Iterable[(Int, V1)]): IntMap[V1] = concat(that)
+
+  def collect[V2](pf: PartialFunction[(Int, T), (Int, V2)]): IntMap[V2] =
+    flatMap(kv => if (pf.isDefinedAt(kv)) new View.Single(pf(kv)) else View.Empty)
 
   /**
     * Updates the map, using the provided function to resolve conflicts if the key is already present.

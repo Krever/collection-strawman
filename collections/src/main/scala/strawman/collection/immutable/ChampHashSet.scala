@@ -22,18 +22,14 @@ import java.lang.System.arraycopy
   *  @define Coll `immutable.ChampHashSet`
   *  @define coll immutable champ hash set
   */
-@SerialVersionUID(2L)
+@SerialVersionUID(3L)
 final class ChampHashSet[A] private[immutable] (val rootNode: SetNode[A], val cachedJavaHashCode: Int, val cachedSize: Int)
   extends Set[A]
     with SetOps[A, ChampHashSet, ChampHashSet[A]]
     with StrictOptimizedIterableOps[A, ChampHashSet, ChampHashSet[A]]
     with Serializable {
 
-  def iterableFactory: IterableFactory[ChampHashSet] = ChampHashSet
-
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[A]): ChampHashSet[A] = fromIterable(coll)
-
-  protected[this] def newSpecificBuilder(): Builder[A, ChampHashSet[A]] = ChampHashSet.newBuilder()
+  override def iterableFactory: IterableFactory[ChampHashSet] = ChampHashSet
 
   override def knownSize: Int = cachedSize
 
@@ -66,8 +62,6 @@ final class ChampHashSet[A] private[immutable] (val rootNode: SetNode[A], val ca
       ChampHashSet(newRootNode, cachedJavaHashCode - elementHash, cachedSize - 1)
     else this
   }
-
-  def empty: ChampHashSet[A] = ChampHashSet.empty
 
   override def tail: ChampHashSet[A] = this - head
 
@@ -107,7 +101,7 @@ private[immutable] final object SetNode {
 
 }
 
-@SerialVersionUID(2L)
+@SerialVersionUID(3L)
 private[immutable] sealed abstract class SetNode[A] extends Node[SetNode[A]] with Serializable {
 
   def contains(element: A, hash: Int, shift: Int): Boolean
@@ -136,7 +130,7 @@ private[immutable] sealed abstract class SetNode[A] extends Node[SetNode[A]] wit
 
 }
 
-@SerialVersionUID(2L)
+@SerialVersionUID(3L)
 private final class BitmapIndexedSetNode[A](val dataMap: Int, val nodeMap: Int, val content: Array[Any]) extends SetNode[A] {
 
   import Node._
@@ -478,7 +472,7 @@ private final class BitmapIndexedSetNode[A](val dataMap: Int, val nodeMap: Int, 
 
 }
 
-@SerialVersionUID(2L)
+@SerialVersionUID(3L)
 private final class HashCollisionSetNode[A](val hash: Int, val content: Vector[A]) extends SetNode[A] {
 
   import Node._

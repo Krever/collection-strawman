@@ -22,13 +22,13 @@ import scala.{AnyRef, Boolean, Int, None, Option, Serializable, SerialVersionUID
  *  @define orderDependent
  *  @define orderDependentFold
  */
-@SerialVersionUID(1L)
+@SerialVersionUID(3L)
 class LinkedHashSet[A]
   extends Set[A]
     with SetOps[A, LinkedHashSet, LinkedHashSet[A]]
     with Serializable {
 
-  def iterableFactory: IterableFactory[LinkedHashSet] = LinkedHashSet
+  override def iterableFactory: IterableFactory[LinkedHashSet] = LinkedHashSet
 
   type Entry = LinkedHashSet.Entry[A]
 
@@ -58,11 +58,6 @@ class LinkedHashSet[A]
     val entry = table.findEntry(elem)
     if (entry != null) Some(entry.key) else None
   }
-
-  def empty: LinkedHashSet[A] = LinkedHashSet.empty
-
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[A]) = fromIterable(coll)
-  protected[this] def newSpecificBuilder() = iterableFactory.newBuilder()
 
   override def size: Int = table.tableSize
 
@@ -145,6 +140,7 @@ object LinkedHashSet extends IterableFactory[LinkedHashSet] {
   /** Class for the linked hash set entry, used internally.
    *  @since 2.10
    */
+  @SerialVersionUID(3L)
   private[strawman] final class Entry[A](val key: A) extends HashEntry[A, Entry[A]] with Serializable {
     var earlier: Entry[A] = null
     var later: Entry[A] = null

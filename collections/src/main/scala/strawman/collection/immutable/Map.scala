@@ -4,7 +4,7 @@ package immutable
 
 import strawman.collection.mutable.Builder
 
-import scala.{Any, Boolean, `inline`, Int, None, NoSuchElementException, Nothing, Option, Some, Serializable, Unit}
+import scala.{Any, Boolean, `inline`, Int, None, NoSuchElementException, Nothing, Option, Some, Serializable, SerialVersionUID, Unit}
 import scala.Predef.<:<
 
 /** Base type of immutable Maps */
@@ -12,6 +12,8 @@ trait Map[K, +V]
   extends Iterable[(K, V)]
      with collection.Map[K, V]
      with MapOps[K, V, Map, Map[K, V]] {
+
+  override def mapFactory: strawman.collection.MapFactory[MapCC] = Map
 
   override final def toMap[K2, V2](implicit ev: (K, V) <:< (K2, V2)): Map[K2, V2] = this.asInstanceOf[Map[K2, V2]]
 
@@ -89,7 +91,7 @@ trait MapOps[K, +V, +CC[X, +Y] <: MapOps[X, Y, CC, _], +C <: MapOps[K, V, CC, C]
     * @tparam V1 the type of the value in the key/value pair.
     * @return A new map with the new binding added to this map.
     */
-  /*@`inline` final*/ def + [V1 >: V](kv: (K, V1)): CC[K, V1] = updated(kv._1, kv._2)
+  override def + [V1 >: V](kv: (K, V1)): CC[K, V1] = updated(kv._1, kv._2)
 
   /** This function transforms all the values of mappings contained
     *  in this map with function `f`.
@@ -109,11 +111,8 @@ trait MapOps[K, +V, +CC[X, +Y] <: MapOps[X, Y, CC, _], +C <: MapOps[K, V, CC, C]
   override def keySet: Set[K] = new ImmutableKeySet
 
   /** The implementation class of the set returned by `keySet` */
+  @SerialVersionUID(3L)
   protected class ImmutableKeySet extends Set[K] with GenKeySet {
-    def iterableFactory: IterableFactory[Set] = Set
-    protected[this] def fromSpecificIterable(coll: collection.Iterable[K]): Set[K] = fromIterable(coll)
-    protected[this] def newSpecificBuilder(): Builder[K, Set[K]] = iterableFactory.newBuilder()
-    def empty: Set[K] = iterableFactory.empty
     def incl(elem: K): Set[K] = if (this(elem)) this else empty ++ this + elem
     def excl(elem: K): Set[K] = if (this(elem)) empty ++ this - elem else this
   }
@@ -130,34 +129,33 @@ object Map extends MapFactory[Map] {
   private final val useBaseline: Boolean =
     scala.sys.props.get("strawman.collection.immutable.useBaseline").contains("true")
 
+  @SerialVersionUID(3L)
   class WithDefault[K, +V](val underlying: Map[K, V], val defaultValue: K => V)
     extends Map[K, V]
-    with MapOps[K, V, Map, WithDefault[K, V]]{
+      with MapOps[K, V, Map, WithDefault[K, V]]
+      with Serializable{
 
     def get(key: K): Option[V] = underlying.get(key)
 
     override def default(key: K): V = defaultValue(key)
 
-    def iterableFactory: IterableFactoryLike[Iterable] = underlying.iterableFactory
+    override def iterableFactory: IterableFactory[Iterable] = underlying.iterableFactory
 
     def iterator(): Iterator[(K, V)] = underlying.iterator()
 
-    def mapFactory: MapFactory[Map] = underlying.mapFactory
+    override def mapFactory: MapFactory[Map] = underlying.mapFactory
 
     def remove(key: K): WithDefault[K, V] = new WithDefault[K, V](underlying.remove(key), defaultValue)
 
     def updated[V1 >: V](key: K, value: V1): WithDefault[K, V1] =
       new WithDefault[K, V1](underlying.updated(key, value), defaultValue)
 
-    def empty: WithDefault[K, V] = new WithDefault[K, V](underlying.empty, defaultValue)
+    override def empty: WithDefault[K, V] = new WithDefault[K, V](underlying.empty, defaultValue)
 
-    protected[this] def mapFromIterable[K2, V2](it: collection.Iterable[(K2, V2)]): Map[K2, V2] =
-      mapFactory.from(it)
-
-    protected[this] def fromSpecificIterable(coll: collection.Iterable[(K, V)]): WithDefault[K, V] =
+    override protected[this] def fromSpecificIterable(coll: collection.Iterable[(K, V)]): WithDefault[K, V] =
       new WithDefault[K, V](mapFactory.from(coll), defaultValue)
 
-    protected[this] def newSpecificBuilder(): Builder[(K, V), WithDefault[K, V]] =
+    override protected[this] def newSpecificBuilder(): Builder[(K, V), WithDefault[K, V]] =
       Map.newBuilder().mapResult((p: Map[K, V]) => new WithDefault[K, V](p, defaultValue))
   }
 
@@ -172,31 +170,29 @@ object Map extends MapFactory[Map] {
   def newBuilder[K, V](): Builder[(K, V), Map[K, V]] =
     if (useBaseline) HashMap.newBuilder() else ChampHashMap.newBuilder()
 
-  trait SmallMap[K, +V] extends Map[K, V] {
-    def iterableFactory: IterableFactory[Iterable] = Iterable
-    def mapFactory: MapFactory[Map] = Map
-    def empty: Map[K, V] = mapFactory.empty
-    protected[this] def fromSpecificIterable(coll: collection.Iterable[(K, V)]): Map[K, V] = mapFactory.from(coll)
-    protected[this] def mapFromIterable[K2, V2](it: collection.Iterable[(K2, V2)]): Map[K2, V2] = mapFactory.from(it)
-    protected[this] def newSpecificBuilder(): Builder[(K, V), Map[K, V]] = mapFactory.newBuilder()
-  }
-
-  private object EmptyMap extends Map[Any, Nothing] with SmallMap[Any, Nothing] with Serializable {
+  @SerialVersionUID(3L)
+  private object EmptyMap extends Map[Any, Nothing] with Serializable {
     override def size: Int = 0
+    override def knownSize: Int = 0
     override def apply(key: Any) = throw new NoSuchElementException("key not found: " + key)
     override def contains(key: Any) = false
     def get(key: Any): Option[Nothing] = None
+    override def getOrElse [V1](key: Any, default: => V1): V1 = default
     def iterator(): Iterator[(Any, Nothing)] = Iterator.empty
     def updated [V1] (key: Any, value: V1): Map[Any, V1] = new Map1(key, value)
     def remove(key: Any): Map[Any, Nothing] = this
   }
 
-  final class Map1[K, +V](key1: K, value1: V) extends Map[K, V] with SmallMap[K, V] with Serializable {
-    override def size = 1
+  @SerialVersionUID(3L)
+  final class Map1[K, +V](key1: K, value1: V) extends Map[K, V] with Serializable {
+    override def size: Int = 1
+    override def knownSize: Int = 1
     override def apply(key: K) = if (key == key1) value1 else throw new NoSuchElementException("key not found: " + key)
     override def contains(key: K) = key == key1
     def get(key: K): Option[V] =
       if (key == key1) Some(value1) else None
+    override def getOrElse [V1 >: V](key: K, default: => V1): V1 =
+      if (key == key1) value1 else default
     def iterator() = Iterator.single((key1, value1))
     def updated[V1 >: V](key: K, value: V1): Map[K, V1] =
       if (key == key1) new Map1(key1, value)
@@ -208,8 +204,10 @@ object Map extends MapFactory[Map] {
     }
   }
 
-  final class Map2[K, +V](key1: K, value1: V, key2: K, value2: V) extends Map[K, V] with SmallMap[K, V] with Serializable {
-    override def size = 2
+  @SerialVersionUID(3L)
+  final class Map2[K, +V](key1: K, value1: V, key2: K, value2: V) extends Map[K, V] with Serializable {
+    override def size: Int = 2
+    override def knownSize: Int = 2
     override def apply(key: K) =
       if (key == key1) value1
       else if (key == key2) value2
@@ -219,6 +217,10 @@ object Map extends MapFactory[Map] {
       if (key == key1) Some(value1)
       else if (key == key2) Some(value2)
       else None
+    override def getOrElse [V1 >: V](key: K, default: => V1): V1 =
+      if (key == key1) value1
+      else if (key == key2) value2
+      else default
     def iterator() = ((key1, value1) :: (key2, value2) :: Nil).iterator()
     def updated[V1 >: V](key: K, value: V1): Map[K, V1] =
       if (key == key1) new Map2(key1, value, key2, value2)
@@ -233,8 +235,10 @@ object Map extends MapFactory[Map] {
     }
   }
 
-  class Map3[K, +V](key1: K, value1: V, key2: K, value2: V, key3: K, value3: V) extends Map[K, V] with SmallMap[K, V] with Serializable {
-    override def size = 3
+  @SerialVersionUID(3L)
+  class Map3[K, +V](key1: K, value1: V, key2: K, value2: V, key3: K, value3: V) extends Map[K, V] with Serializable {
+    override def size: Int = 3
+    override def knownSize: Int = 3
     override def apply(key: K) =
       if (key == key1) value1
       else if (key == key2) value2
@@ -246,6 +250,11 @@ object Map extends MapFactory[Map] {
       else if (key == key2) Some(value2)
       else if (key == key3) Some(value3)
       else None
+    override def getOrElse [V1 >: V](key: K, default: => V1): V1 =
+      if (key == key1) value1
+      else if (key == key2) value2
+      else if (key == key3) value3
+      else default
     def iterator() = ((key1, value1) :: (key2, value2) :: (key3, value3) :: Nil).iterator()
     def updated[V1 >: V](key: K, value: V1): Map[K, V1] =
       if (key == key1)      new Map3(key1, value, key2, value2, key3, value3)
@@ -262,8 +271,10 @@ object Map extends MapFactory[Map] {
     }
   }
 
-  final class Map4[K, +V](key1: K, value1: V, key2: K, value2: V, key3: K, value3: V, key4: K, value4: V) extends Map[K, V] with SmallMap[K, V] with Serializable {
-    override def size = 4
+  @SerialVersionUID(3L)
+  final class Map4[K, +V](key1: K, value1: V, key2: K, value2: V, key3: K, value3: V, key4: K, value4: V) extends Map[K, V] with Serializable {
+    override def size: Int = 4
+    override def knownSize: Int = 4
     override def apply(key: K) =
       if (key == key1) value1
       else if (key == key2) value2
@@ -277,6 +288,12 @@ object Map extends MapFactory[Map] {
       else if (key == key3) Some(value3)
       else if (key == key4) Some(value4)
       else None
+    override def getOrElse [V1 >: V](key: K, default: => V1): V1 =
+      if (key == key1) value1
+      else if (key == key2) value2
+      else if (key == key3) value3
+      else if (key == key4) value4
+      else default
     def iterator() = ((key1, value1) :: (key2, value2) :: (key3, value3) :: (key4, value4) :: Nil).iterator()
     def updated[V1 >: V](key: K, value: V1): Map[K, V1] =
       if (key == key1)      new Map4(key1, value, key2, value2, key3, value3, key4, value4)

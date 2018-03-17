@@ -62,7 +62,7 @@ object Vector extends StrictOptimizedSeqFactory[Vector] {
  *  @define mayNotTerminateInf
  *  @define willNotTerminateInf
  */
-@SerialVersionUID(-1334388273712300479L)
+@SerialVersionUID(3L)
 final class Vector[+A] private[immutable] (private[collection] val startIndex: Int, private[collection] val endIndex: Int, focus: Int)
   extends IndexedSeq[A]
     with IndexedSeqOps[A, Vector, Vector[A]]
@@ -70,17 +70,13 @@ final class Vector[+A] private[immutable] (private[collection] val startIndex: I
     with VectorPointer[A @uncheckedVariance]
     with Serializable { self =>
 
-  def iterableFactory: SeqFactory[Vector] = Vector
-
-  protected[this] def fromSpecificIterable(it: collection.Iterable[A]): Vector[A] = fromIterable(it)
-
-  protected[this] def newSpecificBuilder(): Builder[A, Vector[A]] = Vector.newBuilder()
+  override def iterableFactory: SeqFactory[Vector] = Vector
 
   private[immutable] var dirty = false
 
-  protected def finiteSize: Int = endIndex - startIndex
+  def length: Int = endIndex - startIndex
 
-  override def lengthCompare(len: Int): Int = finiteSize - len
+  override def lengthCompare(len: Int): Int = length - len
 
   private[collection] def initIterator[B >: A](s: VectorIterator[B]): Unit = {
     s.initFrom(this)
@@ -163,18 +159,13 @@ final class Vector[+A] private[immutable] (private[collection] val startIndex: I
 
   override def last: A = {
     if (isEmpty) throw new UnsupportedOperationException("empty.last")
-    apply(finiteSize - 1)
+    apply(length - 1)
   }
 
   override def init: Vector[A] = {
     if (isEmpty) throw new UnsupportedOperationException("empty.init")
     dropRight(1)
   }
-
-  override def slice(from: Int, until: Int): Vector[A] =
-    take(until).drop(from)
-
-  override def splitAt(n: Int): (Vector[A], Vector[A]) = (take(n), drop(n))
 
   // appendAll (suboptimal but avoids worst performance gotchas)
   override def appendedAll[B >: A](suffix: collection.Iterable[B]): Vector[B] = {
@@ -628,6 +619,10 @@ final class VectorBuilder[A]() extends ReusableBuilder[A, Vector[A]] with Vector
   private var blockIndex = 0
   private var lo = 0
 
+  def size: Int = blockIndex + lo
+  def isEmpty: Boolean = size == 0
+  def nonEmpty: Boolean = size != 0
+
   def addOne(elem: A): this.type = {
     if (lo >= display0.length) {
       val newBlockIndex = blockIndex + 32
@@ -641,7 +636,7 @@ final class VectorBuilder[A]() extends ReusableBuilder[A, Vector[A]] with Vector
   }
 
   def result(): Vector[A] = {
-    val size = blockIndex + lo
+    val size = this.size
     if (size == 0)
       return Vector.empty
     val s = new Vector[A](0, size, 0) // should focus front or back?

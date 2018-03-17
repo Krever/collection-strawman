@@ -108,6 +108,54 @@ class IteratorTest {
     assertFalse(r3 contains 5)
     assertTrue(r3.isEmpty)
   }
+  @Test def rangeOverflow(): Unit = {
+    val step = 100000000
+    val numExpectedSamples = 22
+    def createIterator = Iterator.range(0, Int.MaxValue, step)
+    assertEquals(createIterator.size, numExpectedSamples)
+    assertEquals(createIterator.min, 0)
+    assertEquals(createIterator.max, (numExpectedSamples - 1) * step)
+  }
+  @Test def rangeOverflow2() : Unit = {
+    val step = (Int.MaxValue / 2) + 1
+    val numExpectedSamples = 2
+    def createIterator = Iterator.range(0, Int.MaxValue, step)
+    assertEquals(createIterator.size, numExpectedSamples)
+    assertEquals(createIterator.min, 0)
+    assertEquals(createIterator.max, step)
+  }
+  @Test def rangeOverflow3() : Unit = {
+    val step = 1000000000
+    val numExpectedSamples = 5
+    def createIterator = Iterator.range(Int.MinValue +10,Int.MaxValue - 10,step)
+    assertEquals(createIterator.size, numExpectedSamples)
+    assertEquals(createIterator.min, Int.MinValue + 10)
+    assertEquals(createIterator.max, Int.MinValue + 10 + (numExpectedSamples - 1) * step)
+  }
+  @Test def rangeUnderflow() : Unit = {
+    val step = -100000000
+    val numExpectedSamples = 22
+    def createIterator = Iterator.range(0, -Int.MaxValue, step)
+    assertEquals(createIterator.size, numExpectedSamples)
+    assertEquals(createIterator.min, (numExpectedSamples - 1) * step)
+    assertEquals(createIterator.max, 0)
+  }
+  @Test def rangeUnderflow2() : Unit = {
+    val step = -(Int.MaxValue / 2) - 1
+    val numExpectedSamples = 2
+    def createIterator = Iterator.range(0, -Int.MaxValue, step)
+    assertEquals(createIterator.size, numExpectedSamples)
+    assertEquals(createIterator.min, step)
+    assertEquals(createIterator.max, 0)
+  }
+  @Test def rangeUnderflow3() : Unit = {
+    val step = -1000000000
+    val numExpectedSamples = 5
+    def createIterator = Iterator.range(Int.MaxValue -10,Int.MinValue + 10,step)
+    assertEquals(createIterator.size, numExpectedSamples)
+    assertEquals(createIterator.min, Int.MaxValue - 10 + (numExpectedSamples - 1) * step)
+    assertEquals(createIterator.max, Int.MaxValue - 10)
+  }
   @Test def take(): Unit = {
     assertEquals(10, (Iterator from 0 take 10).size)
   }
@@ -314,5 +362,121 @@ class IteratorTest {
     val it = List("a", null, "b", null, "c", null).iterator()
 
     assertEquals("a,null,b,null,c,null", it.mkString(","))
+  }
+
+  @Test
+  def emptyTypedIteratorsShouldBeEqual: Unit = {
+    val emptyDoubleIterator = Iterator.empty[Double]
+    val emptyIntIterator = Iterator.empty[Int]
+    assertSame(emptyDoubleIterator, emptyIntIterator)
+  }
+
+  @Test
+  def emptyIteratorInHigherOrderFunctions: Unit = {
+    val seqOfIterators = Seq(Seq(1, 2, 3).iterator(), Seq(3, 2, 1).iterator(), Seq(1, 3, 2).iterator())
+    val unified = seqOfIterators.foldLeft(Iterator.empty[Int])((a, b) => a ++ b)
+    assertEquals(List(1, 2, 3, 3, 2, 1, 1, 3, 2), List.from(unified))
+  }
+
+  @Test
+  def emptyIteratorBuilder: Unit = {
+    assertSame(Iterator.empty[Int], Iterator.newBuilder[Int]().result())
+  }
+
+  @Test
+  def nonEmptyIteratorBuilder: Unit = {
+    var iteratorBuilder = Iterator.newBuilder[Int]()
+    iteratorBuilder += 5
+    iteratorBuilder += 4
+    iteratorBuilder += 3
+    assertEquals(List(5, 4, 3), List.from(iteratorBuilder.result()))
+  }
+
+  @Test
+  def nonEmptyIteratorAndClearBuilder: Unit = {
+    var iteratorBuilder = Iterator.newBuilder[Int]()
+    iteratorBuilder += 1
+    iteratorBuilder.clear()
+    assertSame(Iterator.empty, iteratorBuilder.result())
+  }
+
+  @Test def copyToArray(): Unit = {
+    def check(a: Array[Int], start: Int, end: Int) = {
+      var i = 0
+      while (i < start) {
+        assert(a(i) == 0)
+        i += 1
+      }
+      while (i < a.length && i < end) {
+        assert(a(i) == i - start)
+        i += 1
+      }
+      while (i < a.length) {
+        assert(a(i) == 0)
+        i += 1
+      }
+    }
+
+    val far = 100000
+    def l = Iterable.from(Range(0, 100)).iterator()
+    check(l.copyToArray(new Array(100)),
+      0, far)
+    check(l.copyToArray(new Array(10)),
+      0, far)
+    check(l.copyToArray(new Array(1000)),
+      0, 100)
+
+    check(l.copyToArray(new Array(100), 5),
+      5, 105)
+    check(l.copyToArray(new Array(10), 5),
+      5, 10)
+    check(l.copyToArray(new Array(1000), 5),
+      5, 105)
+
+    check(l.copyToArray(new Array(100), 5, 50),
+      5, 55)
+    check(l.copyToArray(new Array(10), 5, 50),
+      5, 10)
+    check(l.copyToArray(new Array(1000), 5, 50),
+      5, 55)
+
+    assertThrows[ArrayIndexOutOfBoundsException](l.copyToArray(new Array(10), -1))
+    assertThrows[ArrayIndexOutOfBoundsException](l.copyToArray(new Array(10), -1, 10))
+
+    check(l.copyToArray(new Array(10), 10),
+      0, 0)
+    check(l.copyToArray(new Array(10), 10, 10),
+      0, 0)
+    check(l.copyToArray(new Array(10), 0, -1),
+      0, 0)
+  }
+  // scala/bug#10709
+  @Test def `scan is lazy enough`(): Unit = {
+    val results = mutable.ListBuffer.empty[Int]
+    val it = new AbstractIterator[Int] {
+      var cur = 1
+      val max = 3
+      override def hasNext = {
+        results += -cur
+        cur < max
+      }
+      override def next() = {
+        val res = cur
+        results += -res
+        cur += 1
+        res
+      }
+    }
+    val xy = it.scanLeft(10)((sum, x) => {
+      results += -(sum + x)
+      sum + x
+    })
+    val scan = mutable.ListBuffer.empty[Int]
+    for (i <- xy) {
+      scan += i
+      results += i
+    }
+    assertTrue(List(10,11,13).sameElements(scan))
+    assertTrue(List(10,-1,-1,-11,11,-2,-2,-13,13,-3).sameElements(results))
   }
 }

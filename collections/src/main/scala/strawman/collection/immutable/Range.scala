@@ -46,7 +46,7 @@ import strawman.collection.mutable.Builder
   *    '''Note:''' this method does not use builders to construct a new range,
   *         and its complexity is O(1).
   */
-@SerialVersionUID(7618862778670199309L)
+@SerialVersionUID(3L)
 sealed abstract class Range(
   val start: Int,
   val end: Int,
@@ -56,13 +56,6 @@ sealed abstract class Range(
     with IndexedSeqOps[Int, IndexedSeq, IndexedSeq[Int]]
     with StrictOptimizedSeqOps[Int, IndexedSeq, IndexedSeq[Int]]
     with Serializable { range =>
-
-  def iterableFactory: SeqFactory[IndexedSeq] = IndexedSeq
-
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[Int]): IndexedSeq[Int] =
-    fromIterable(coll)
-
-  protected[this] def newSpecificBuilder(): Builder[Int, IndexedSeq[Int]] = IndexedSeq.newBuilder()
 
   override def iterator(): Iterator[Int] = new RangeIterator(start, step, lastElement, isEmpty)
 
@@ -89,7 +82,7 @@ sealed abstract class Range(
     }
   }
 
-  protected def finiteSize: Int = if (numRangeElements < 0) fail() else numRangeElements
+  def length = if (numRangeElements < 0) fail() else numRangeElements
 
   // This field has a sensible value only for non-empty ranges
   private val lastElement = step match {
@@ -449,10 +442,12 @@ object Range {
     */
   def inclusive(start: Int, end: Int): Range.Inclusive = new Range.Inclusive(start, end, 1)
 
+  @SerialVersionUID(3L)
   final class Inclusive(start: Int, end: Int, step: Int) extends Range(start, end, step) {
     def isInclusive = true
   }
 
+  @SerialVersionUID(3L)
   final class Exclusive(start: Int, end: Int, step: Int) extends Range(start, end, step) {
     def isInclusive = false
   }

@@ -9,7 +9,7 @@ import java.lang.String
 /** This class implements mutable maps using a hashtable.
   *
   *  @since 1
-  *  @see [[http://docs.scala-lang.org/overviews/collections/concrete-mutable-collection-classes.html#hash_tables "Scala's Collection Library overview"]]
+  *  @see [[http://docs.scala-lang.org/overviews/collections/concrete-mutable-collection-classes.html#hash-tables "Scala's Collection Library overview"]]
   *  section on `Hash Tables` for more information.
   *
   *  @tparam K    the type of the keys contained in this hash map.
@@ -20,14 +20,14 @@ import java.lang.String
   *  @define mayNotTerminateInf
   *  @define willNotTerminateInf
   */
-@SerialVersionUID(1L)
+@SerialVersionUID(3L)
 class HashMap[K, V] private[collection] (contents: HashTable.Contents[K, DefaultEntry[K, V]])
   extends AbstractMap[K, V]
     with MapOps[K, V, HashMap, HashMap[K, V]]
     with StrictOptimizedIterableOps[(K, V), Iterable, HashMap[K, V]]
     with Serializable {
 
-  def mapFactory = HashMap
+  override def mapFactory = HashMap
 
   @transient private[this] var table: HashTable[K, V, DefaultEntry[K, V]] = newHashTable
   table.initWithContents(contents)
@@ -41,14 +41,7 @@ class HashMap[K, V] private[collection] (contents: HashTable.Contents[K, Default
       def createNewEntry(key: K, value: V): DefaultEntry[K, V] = new Entry(key, value)
     }
 
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[(K, V)]): HashMap[K, V] = HashMap.from(coll)
-  protected[this] def mapFromIterable[K2, V2](it: collection.Iterable[(K2, V2)]): HashMap[K2, V2] = HashMap.from(it)
-
-  protected[this] def newSpecificBuilder(): Builder[(K, V), HashMap[K, V]] =  HashMap.newBuilder()
-
   def iterator(): Iterator[(K, V)] = table.entriesIterator.map(e => (e.key, e.value))
-
-  def empty: HashMap[K, V] = HashMap.empty
 
   def get(key: K): Option[V] = {
     val e = table.findEntry(key)
@@ -87,8 +80,8 @@ class HashMap[K, V] private[collection] (contents: HashTable.Contents[K, Default
   override def getOrElseUpdate(key: K, defaultValue: => V): V = {
     val hash = table.elemHashCode(key)
     val i = table.index(hash)
-    val entry = table.findEntry0(key, i)
-    if (entry != null) entry.value
+    val firstEntry = table.findEntry0(key, i)
+    if (firstEntry != null) firstEntry.value
     else {
       val table0 = table.table
       val default = defaultValue
@@ -96,8 +89,11 @@ class HashMap[K, V] private[collection] (contents: HashTable.Contents[K, Default
       // a table resize.
       val newEntryIndex = if (table0 eq table.table) i else table.index(hash)
       val e = table.createNewEntry(key, default)
-      if (table.tableSize >= table.threshold) table.addEntry(e)
-      else table.addEntry2(e, newEntryIndex)
+      // Repeat search
+      // because evaluation of `default` can bring entry with `key`
+      val secondEntry = table.findEntry0(key, newEntryIndex)
+      if (secondEntry == null) table.addEntry0(e, newEntryIndex)
+      else secondEntry.value = default
       default
     }
   }
@@ -136,6 +132,7 @@ object HashMap extends MapFactory[HashMap] {
 /** Class used internally for default map model.
   *  @since 2.3
   */
+@SerialVersionUID(3L)
 final class DefaultEntry[A, B](val key: A, var value: B)
   extends HashEntry[A, DefaultEntry[A, B]]
     with Serializable {

@@ -582,19 +582,19 @@ private[collection] final class CNode[K, V](val bitmap: Int, val array: Array[Ba
   private[concurrent] def string(lev: Int): String = "CNode %x\n%s".format(bitmap, array.map(_.string(lev + 1)).mkString("\n"))
 
   /* quiescently consistent - don't call concurrently to anything involving a GCAS!! */
-  private def collectElems: Seq[(K, V)] = array flatMap {
+  private def collectElems: Seq[(K, V)] = array.flatMap({
     case sn: SNode[K, V] => Some(sn.kvPair): IterableOnce[(K, V)]
     case in: INode[K, V] => in.mainnode match {
       case tn: TNode[K, V] => Some(tn.kvPair): IterableOnce[(K, V)]
       case ln: LNode[K, V] => ln.entries.to(immutable.List)
       case cn: CNode[K, V] => cn.collectElems
     }
-  }
+  }: (BasicNode => IterableOnce[(K, V)])) //TODO remove type annotatation in 2.13
 
-  private def collectLocalElems: Seq[String] = array flatMap {
+  private def collectLocalElems: Seq[String] = array.flatMap({
     case sn: SNode[K, V] => Some(sn.kvPair._2.toString): IterableOnce[String]
     case in: INode[K, V] => Some(scala.Predef.augmentString(in.toString).drop(14) + "(" + in.gen + ")"): IterableOnce[String]
-  }
+  }: (BasicNode => IterableOnce[String])) //TODO remove type annotatation in 2.13
 
   override def toString = {
     val elems = collectLocalElems
@@ -637,12 +637,12 @@ private[concurrent] case class RDCSS_Descriptor[K, V](old: INode[K, V], expected
   *  iterator and clear operations. The cost of evaluating the (lazy) snapshot is
   *  distributed across subsequent updates, thus making snapshot evaluation horizontally scalable.
   *
-  *  For details, see: http://lampwww.epfl.ch/~prokopec/ctries-snapshot.pdf
+  *  For details, see: [[http://lampwww.epfl.ch/~prokopec/ctries-snapshot.pdf]]
   *
   *  @author Aleksandar Prokopec
   *  @since 2.10
   */
-@SerialVersionUID(0L - 6402774413839597105L)
+@SerialVersionUID(3L)
 final class TrieMap[K, V] private (r: AnyRef, rtupd: AtomicReferenceFieldUpdater[TrieMap[K, V], AnyRef], hashf: Hashing[K], ef: Equiv[K])
   extends strawman.collection.concurrent.Map[K, V]
     with strawman.collection.mutable.MapOps[K, V, TrieMap, TrieMap[K, V]]
@@ -664,10 +664,7 @@ final class TrieMap[K, V] private (r: AnyRef, rtupd: AtomicReferenceFieldUpdater
 
   def this() = this(Hashing.default, Equiv.universal)
 
-  def mapFactory: MapFactory[TrieMap] = TrieMap
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[(K, V)]): TrieMap[K,V] = TrieMap.from(coll)
-  protected[this] def mapFromIterable[K2, V2](it: collection.Iterable[(K2, V2)]): TrieMap[K2,V2] = TrieMap.from(it)
-  protected[this] def newSpecificBuilder(): Builder[(K, V), TrieMap[K,V]] = TrieMap.newBuilder[K, V]()
+  override def mapFactory: MapFactory[TrieMap] = TrieMap
 
   /* internal methods */
 
@@ -958,11 +955,11 @@ final class TrieMap[K, V] private (r: AnyRef, rtupd: AtomicReferenceFieldUpdater
     if (nonReadOnly) readOnlySnapshot().keySet
     else super.keySet
   }
-  override def filterKeys(p: K => Boolean): collection.View[(K, V)] = {
+  override def filterKeys(p: K => Boolean): collection.MapView[K, V] = {
     if (nonReadOnly) readOnlySnapshot().filterKeys(p)
     else super.filterKeys(p)
   }
-  override def mapValues[W](f: V => W): collection.View[(K, W)] = {
+  override def mapValues[W](f: V => W): collection.MapView[K, W] = {
     if (nonReadOnly) readOnlySnapshot().mapValues(f)
     else super.mapValues(f)
   }
@@ -1133,7 +1130,7 @@ private[concurrent] object RestartException extends ControlThrowable
 
 
 /** Only used for ctrie serialization. */
-@SerialVersionUID(0L - 7237891413820527142L)
+@SerialVersionUID(3L)
 private[concurrent] case object TrieMapSerializationEnd
 
 

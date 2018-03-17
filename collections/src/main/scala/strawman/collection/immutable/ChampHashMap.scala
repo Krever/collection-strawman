@@ -26,22 +26,14 @@ import strawman.collection.mutable.{Builder, ImmutableBuilder}
   *  @define coll immutable champ hash map
   */
 
-@SerialVersionUID(2L)
+@SerialVersionUID(3L)
 final class ChampHashMap[K, +V] private[immutable] (val rootNode: MapNode[K, V], val cachedJavaKeySetHashCode: Int, val cachedSize: Int)
   extends Map[K, V]
     with MapOps[K, V, ChampHashMap, ChampHashMap[K, V]]
     with StrictOptimizedIterableOps[(K, V), Iterable /* ChampHashMap */, ChampHashMap[K, V]]
     with Serializable {
 
-  def iterableFactory: IterableFactory[Iterable] = Iterable
-
-  def mapFactory: MapFactory[ChampHashMap] = ChampHashMap
-
-  protected[this] def mapFromIterable[K2, V2](it: collection.Iterable[(K2, V2)]): ChampHashMap[K2, V2] = ChampHashMap.from(it)
-
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[(K, V)]): ChampHashMap[K, V] = ChampHashMap.from(coll)
-
-  protected[this] def newSpecificBuilder(): Builder[(K, V), ChampHashMap[K, V]] = ChampHashMap.newBuilder()
+  override def mapFactory: MapFactory[ChampHashMap] = ChampHashMap
 
   override def knownSize: Int = cachedSize
 
@@ -82,8 +74,6 @@ final class ChampHashMap[K, +V] private[immutable] (val rootNode: MapNode[K, V],
     else this
   }
 
-  def empty: ChampHashMap[K, V] = ChampHashMap.empty
-
   override def tail: ChampHashMap[K, V] = this - head._1
 
   override def init: ChampHashMap[K, V] = this - last._1
@@ -117,7 +107,7 @@ private[immutable] object MapNode {
 
 }
 
-@SerialVersionUID(2L)
+@SerialVersionUID(3L)
 private[immutable] sealed abstract class MapNode[K, +V] extends Node[MapNode[K, V @uV]] with Serializable {
 
   def get(key: K, hash: Int, shift: Int): Option[V]
@@ -150,7 +140,7 @@ private[immutable] sealed abstract class MapNode[K, +V] extends Node[MapNode[K, 
 
 }
 
-@SerialVersionUID(2L)
+@SerialVersionUID(3L)
 private final class BitmapIndexedMapNode[K, +V](val dataMap: Int, val nodeMap: Int, val content: Array[Any]) extends MapNode[K, V] {
 
   import Node._
@@ -501,7 +491,7 @@ private final class BitmapIndexedMapNode[K, +V](val dataMap: Int, val nodeMap: I
 
 }
 
-@SerialVersionUID(2L)
+@SerialVersionUID(3L)
 private final class HashCollisionMapNode[K, +V](val hash: Int, val content: Vector[(K, V)]) extends MapNode[K, V] {
 
   import Node._

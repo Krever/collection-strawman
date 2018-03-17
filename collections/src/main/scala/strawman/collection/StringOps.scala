@@ -27,7 +27,6 @@ final class StringOps(val s: String)
     with IterableOnce[Char]
     with collection.IndexedSeqOps[Char, immutable.IndexedSeq, String]
     with collection.StrictOptimizedIterableOps[Char, immutable.IndexedSeq, String]
-    with collection.ArrayLike[Char]
     with Ordered[String] {
 
   def toIterable = StringView(s)
@@ -45,7 +44,7 @@ final class StringOps(val s: String)
 
   protected[this] def newSpecificBuilder() = new StringBuilder
 
-  protected def finiteSize = s.length
+  def length = s.length
 
   @throws[StringIndexOutOfBoundsException]
   def apply(i: Int) = s.charAt(i)
@@ -96,6 +95,24 @@ final class StringOps(val s: String)
     sb.result()
   }
 
+  // Overloaded version of `padTo` that gives back a string, where the inherited
+  //  version gives back a sequence.
+  /** Returns a String with a Char appended until a given target length is reached.
+    *
+    *  @param   len   the target length
+    *  @param   elem  the padding value
+    *  @return a String consisting of
+    *          this String followed by the minimal number of occurrences of `elem` so
+    *          that the resulting String has a length of at least `len`.
+    */
+  def padTo(len: Int, elem: Char): String =
+    if(s.length >= len) s else {
+      val b = new java.lang.StringBuilder(len)
+      b.append(s)
+      while(b.length < len) b.append(elem)
+      b.toString
+    }
+
   /** Alias for `concat` */
   @`inline` def ++ (suffix: IterableOnce[Char]): String = concat(suffix)
 
@@ -138,7 +155,7 @@ final class StringOps(val s: String)
     *                   by `other`.
     */
   def patch(from: Int, other: String, replaced: Int): String =
-    fromSpecificIterable(new View.Patched(toIterable, from, other, replaced)) //TODO optimize
+    fromSpecificIterable(new View.Patched(this, from, other, replaced)) //TODO optimize
 
   /** A copy of this string with one single replaced element.
     *  @param  index  the position of the replacement
@@ -147,7 +164,7 @@ final class StringOps(val s: String)
     *  @throws IndexOutOfBoundsException if `index` does not satisfy `0 <= index < length`.
     */
   def updated(index: Int, elem: Char): String =
-    fromSpecificIterable(View.Updated(toIterable, index, elem)) // TODO optimize
+    fromSpecificIterable(new View.Updated(this, index, elem)) // TODO optimize
 
   override def toString = s
 
@@ -155,7 +172,7 @@ final class StringOps(val s: String)
 
   override def slice(from: Int, until: Int): String = {
     val start = from max 0
-    val end   = until min finiteSize
+    val end   = until min length
 
     if (start >= end) newSpecificBuilder().result()
     else (newSpecificBuilder() ++= toString.substring(start, end)).result()
@@ -582,7 +599,7 @@ final class StringOps(val s: String)
 }
 
 case class StringView(s: String) extends IndexedView[Char] {
-  protected def finiteSize = s.length
+  def length = s.length
   @throws[StringIndexOutOfBoundsException]
   def apply(n: Int) = s.charAt(n)
   override def className = "StringView"

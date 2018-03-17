@@ -21,15 +21,14 @@ import java.lang.String
   * @define Coll mutable.TreeMap
   * @define coll mutable tree map
   */
-@SerialVersionUID(-2558985573956740112L)
+@SerialVersionUID(3L)
 sealed class TreeMap[K, V] private (tree: RB.Tree[K, V])(implicit val ordering: Ordering[K])
   extends SortedMap[K, V]
     with SortedMapOps[K, V, TreeMap, TreeMap[K, V]]
     with StrictOptimizedIterableOps[(K, V), Iterable, TreeMap[K, V]]
     with Serializable {
 
-  def mapFactory = Map
-  def sortedMapFactory = TreeMap
+  override def sortedMapFactory = TreeMap
 
   /**
     * Creates an empty `TreeMap`.
@@ -38,12 +37,6 @@ sealed class TreeMap[K, V] private (tree: RB.Tree[K, V])(implicit val ordering: 
     */
   def this()(implicit ord: Ordering[K]) = this(RB.Tree.empty)(ord)
 
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[(K, V)]): TreeMap[K, V] = TreeMap.from(coll)
-
-  protected[this] def sortedMapFromIterable[K2, V2](it: collection.Iterable[(K2, V2)])(implicit ordering: Ordering[K2]): TreeMap[K2, V2] = TreeMap.from(it)
-
-  protected[this] def newSpecificBuilder(): Builder[(K, V), TreeMap[K, V]] = TreeMap.newBuilder()
-
   def iterator(): Iterator[(K, V)] = RB.iterator(tree)
 
   def keysIteratorFrom(start: K): Iterator[K] = RB.keysIterator(tree, Some(start))
@@ -51,8 +44,6 @@ sealed class TreeMap[K, V] private (tree: RB.Tree[K, V])(implicit val ordering: 
   def iteratorFrom(start: K): Iterator[(K, V)] = RB.iterator(tree, Some(start))
 
   override def valuesIteratorFrom(start: K): Iterator[V] = RB.valuesIterator(tree, Some(start))
-
-  def empty: TreeMap[K, V] = TreeMap.empty
 
   def addOne(elem: (K, V)): this.type = { RB.insert(tree, elem._1, elem._2); this }
 
@@ -110,7 +101,7 @@ sealed class TreeMap[K, V] private (tree: RB.Tree[K, V])(implicit val ordering: 
     * @param until the upper bound (exclusive) of this projection wrapped in a `Some`, or `None` if there is no upper
     *              bound.
     */
-  @SerialVersionUID(2219159283273389116L)
+  @SerialVersionUID(3L)
   private[this] final class TreeMapProjection(from: Option[K], until: Option[K]) extends TreeMap[K, V](tree) {
 
     /**

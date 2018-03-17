@@ -10,8 +10,10 @@ import scala.annotation.tailrec
   */
 trait LinearSeq[+A] extends Seq[A] with LinearSeqOps[A, LinearSeq, LinearSeq[A]]
 
+object LinearSeq extends SeqFactory.Delegate[LinearSeq](immutable.List)
+
 /** Base trait for linear Seq operations */
-trait LinearSeqOps[+A, +CC[X] <: LinearSeq[X], +C <: LinearSeq[A]] extends Any with SeqOps[A, CC, C] {
+trait LinearSeqOps[+A, +CC[X] <: LinearSeq[X], +C <: LinearSeq[A] with LinearSeqOps[A, CC, C]] extends Any with SeqOps[A, CC, C] {
 
   // To be overridden in implementations:
   def isEmpty: Boolean
@@ -25,7 +27,7 @@ trait LinearSeqOps[+A, +CC[X] <: LinearSeq[X], +C <: LinearSeq[A]] extends Any w
     def next() = { val r = current.head; current = current.tail; r }
   }
 
-  override def size: Int = {
+  def length: Int = {
     var these = toIterable
     var len = 0
     while (!these.isEmpty) {
@@ -127,20 +129,21 @@ trait LinearSeqOps[+A, +CC[X] <: LinearSeq[X], +C <: LinearSeq[A]] extends Any w
     acc
   }
 
-  override def sameElements[B >: A](that: IterableOnce[B]): Boolean = that match {
-    case that1: LinearSeq[B] =>
-      // Probably immutable, so check reference identity first (it's quick anyway)
-      (coll eq that1) || {
-        var these: LinearSeq[A] = coll
-        var those: LinearSeq[B] = that1
-        while (!these.isEmpty && !those.isEmpty && these.head == those.head) {
-          these = these.tail
-          those = those.tail
+  override def sameElements[B >: A](that: IterableOnce[B]): Boolean = {
+    @tailrec def linearSeqEq(a: LinearSeq[B], b: LinearSeq[B]): Boolean =
+      (a eq b) || {
+        if (a.nonEmpty && b.nonEmpty && a.head == b.head) {
+          linearSeqEq(a.tail, b.tail)
         }
-        these.isEmpty && those.isEmpty
+        else {
+          a.isEmpty && b.isEmpty
+        }
       }
-    case _ =>
-      super.sameElements(that)
+
+    that match {
+      case that: LinearSeq[B] => linearSeqEq(coll, that)
+      case _ => super.sameElements(that)
+    }
   }
 
 
@@ -168,4 +171,8 @@ trait LinearSeqOps[+A, +CC[X] <: LinearSeq[X], +C <: LinearSeq[A]] extends Any w
     }
     last
   }
+
+  override def tails: Iterator[C] =
+    Iterator.iterate(coll)(_.tail).takeWhile(_.nonEmpty) ++ Iterator(newSpecificBuilder().result())
+
 }

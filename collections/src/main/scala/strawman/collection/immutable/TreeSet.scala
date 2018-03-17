@@ -15,7 +15,7 @@ import scala.{Boolean, Int, math, NullPointerException, Option, Ordering, Serial
   *  @author  Martin Odersky
   *  @version 2.0, 02/01/2007
   *  @since   1
-  *  @see [[http://docs.scala-lang.org/overviews/collections/concrete-immutable-collection-classes.html#redblack_trees "Scala's Collection Library overview"]]
+  *  @see [[http://docs.scala-lang.org/overviews/collections/concrete-immutable-collection-classes.html#red-black-trees "Scala's Collection Library overview"]]
   *  section on `Red-Black Trees` for more information.
   *
   *  @define Coll `immutable.TreeSet`
@@ -25,7 +25,7 @@ import scala.{Boolean, Int, math, NullPointerException, Option, Ordering, Serial
   *  @define mayNotTerminateInf
   *  @define willNotTerminateInf
   */
-@SerialVersionUID(-5685982407650748405L)
+@SerialVersionUID(3L)
 final class TreeSet[A] private (tree: RB.Tree[A, Unit])(implicit val ordering: Ordering[A])
   extends SortedSet[A]
     with SortedSetOps[A, TreeSet, TreeSet[A]]
@@ -37,17 +37,7 @@ final class TreeSet[A] private (tree: RB.Tree[A, Unit])(implicit val ordering: O
 
   def this()(implicit ordering: Ordering[A]) = this(null)(ordering)
 
-  def iterableFactory = Set
-
-  def sortedIterableFactory = TreeSet
-
-  protected[this] def fromSpecificIterable(coll: strawman.collection.Iterable[A]): TreeSet[A] =
-    TreeSet.from(coll)
-
-  protected[this] def sortedFromIterable[B : Ordering](coll: strawman.collection.Iterable[B]): TreeSet[B] =
-    TreeSet.from(coll)
-
-  protected[this] def newSpecificBuilder(): Builder[A, TreeSet[A]] = TreeSet.newBuilder()
+  override def sortedIterableFactory = TreeSet
 
   private def newSet(t: RB.Tree[A, Unit]) = new TreeSet[A](t)
 
@@ -118,10 +108,6 @@ final class TreeSet[A] private (tree: RB.Tree[A, Unit])(implicit val ordering: O
     *  @return true, iff `elem` is contained in this set.
     */
   def contains(elem: A): Boolean = RB.contains(tree, elem)
-
-  /** A factory to create empty sets of the same type of keys.
-    */
-  def empty: TreeSet[A] = TreeSet.empty
 
   override def range(from: A, until: A): TreeSet[A] = newSet(RB.range(tree, from, until))
 

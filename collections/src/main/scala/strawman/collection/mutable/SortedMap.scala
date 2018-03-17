@@ -2,7 +2,7 @@ package strawman
 package collection.mutable
 
 import strawman.collection.SortedMapFactory
-import scala.{Option, Ordering}
+import scala.{Option, Ordering, Serializable, SerialVersionUID}
 
 /**
   * Base type for mutable sorted map collections
@@ -11,6 +11,8 @@ trait SortedMap[K, V]
   extends collection.SortedMap[K, V]
     with Map[K, V]
     with SortedMapOps[K, V, SortedMap, SortedMap[K, V]] {
+
+  override def sortedMapFactory: SortedMapFactory[SortedMapCC] = SortedMap
 
   /** The same sorted map with a given default function.
     *  Note: The default is only used for `apply`. Other methods like `get`, `contains`, `iterator`, `keys`, etc.
@@ -37,20 +39,18 @@ trait SortedMap[K, V]
 
 trait SortedMapOps[K, V, +CC[X, Y] <: Map[X, Y] with SortedMapOps[X, Y, CC, _], +C <: SortedMapOps[K, V, CC, C]]
   extends collection.SortedMapOps[K, V, CC, C]
-    with MapOps[K, V, Map, C] {
-
-  def mapFromIterable[K2, V2](it: collection.Iterable[(K2, V2)]): Map[K2, V2] = Map.from(it)
-
-}
+    with MapOps[K, V, Map, C]
 
 object SortedMap extends SortedMapFactory.Delegate[SortedMap](TreeMap) {
 
+  @SerialVersionUID(3L)
   final class WithDefault[K, V](underlying: SortedMap[K, V], defaultValue: K => V)
     extends Map.WithDefault[K, V](underlying, defaultValue)
       with SortedMap[K, V]
-      with SortedMapOps[K, V, SortedMap, WithDefault[K, V]] {
+      with SortedMapOps[K, V, SortedMap, WithDefault[K, V]]
+      with Serializable {
 
-    def sortedMapFactory: SortedMapFactory[SortedMap] = underlying.sortedMapFactory
+    override def sortedMapFactory: SortedMapFactory[SortedMap] = underlying.sortedMapFactory
 
     def iteratorFrom(start: K): strawman.collection.Iterator[(K, V)] = underlying.iteratorFrom(start)
 
@@ -58,16 +58,11 @@ object SortedMap extends SortedMapFactory.Delegate[SortedMap](TreeMap) {
 
     implicit def ordering: Ordering[K] = underlying.ordering
 
-    protected[this] def sortedMapFromIterable[K2, V2](it: strawman.collection.Iterable[(K2, V2)])(implicit ordering: Ordering[K2]): SortedMap[K2, V2] =
-      sortedMapFactory.from(it)
-
     def rangeImpl(from: Option[K], until: Option[K]): WithDefault[K, V] =
       new WithDefault[K, V](underlying.rangeImpl(from, until), defaultValue)
 
     // Need to override following methods to match type signatures of `SortedMap.WithDefault`
     // for operations preserving default value
-    override def mapFromIterable[K2, V2](it: collection.Iterable[(K2, V2)]): Map[K2, V2] = mapFactory.from(it)
-
     override def subtractOne(elem: K): WithDefault.this.type = { underlying.subtractOne(elem); this }
 
     override def addOne(elem: (K, V)): WithDefault.this.type = { underlying.addOne(elem); this }

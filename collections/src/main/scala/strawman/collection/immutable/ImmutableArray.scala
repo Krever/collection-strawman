@@ -1,10 +1,10 @@
 package strawman
 package collection.immutable
 
-import strawman.collection.mutable.{ArrayBuffer, Builder}
-import strawman.collection.{IterableOnce, Iterator, SeqFactory, ClassTagSeqFactory, StrictOptimizedClassTagSeqFactory, View}
+import strawman.collection.mutable.{ArrayBuffer, Builder, ArrayBuilder}
+import strawman.collection.{IterableOnce, Iterator, SeqFactory, ClassTagSeqFactory, StrictOptimizedClassTagSeqFactory, View, ArrayOps}
 
-import scala.{Any, ArrayIndexOutOfBoundsException, Boolean, Int, Nothing, UnsupportedOperationException, throws, Array, AnyRef, `inline`, Serializable, Byte, Short, Long, Double, Unit, Float, Char}
+import scala.{Any, ArrayIndexOutOfBoundsException, Boolean, Int, Nothing, UnsupportedOperationException, throws, Array, AnyRef, `inline`, Serializable, SerialVersionUID, Byte, Short, Long, Double, Unit, Float, Char}
 import scala.annotation.unchecked.uncheckedVariance
 import scala.util.hashing.MurmurHash3
 import scala.reflect.ClassTag
@@ -28,7 +28,7 @@ sealed abstract class ImmutableArray[+A]
   /** The tag of the element type */
   protected[this] def elemTag: ClassTag[A]
 
-  def iterableFactory: SeqFactory[ImmutableArray] = ImmutableArray.untagged
+  override def iterableFactory: SeqFactory[ImmutableArray] = ImmutableArray.untagged
 
   /** The wrapped mutable `Array` that backs this `ImmutableArray`. Any changes to this array will break
     * the expected immutability. */
@@ -36,9 +36,9 @@ sealed abstract class ImmutableArray[+A]
   // uncheckedVariance should be safe: Array[A] for reference types A is covariant at the JVM level. Array[A] for
   // primitive types A can only be widened to Array[Any] which erases to Object.
 
-  protected[this] def fromSpecificIterable(coll: strawman.collection.Iterable[A]): ImmutableArray[A] = fromIterable(coll)
+  override protected[this] def fromSpecificIterable(coll: strawman.collection.Iterable[A]): ImmutableArray[A] = ImmutableArray.from[A](coll)(elemTag)
 
-  protected[this] def newSpecificBuilder(): Builder[A, ImmutableArray[A]] = ImmutableArray.newBuilder[A]()(elemTag)
+  override protected[this] def newSpecificBuilder(): Builder[A, ImmutableArray[A]] = ImmutableArray.newBuilder[A]()(elemTag)
 
   @throws[ArrayIndexOutOfBoundsException]
   def apply(i: Int): A
@@ -66,61 +66,58 @@ sealed abstract class ImmutableArray[+A]
     ImmutableArray.unsafeWrapArray(dest)
   }
 
-  override def appendedAll[B >: A](xs: collection.Iterable[B]): ImmutableArray[B] =
-    xs match {
-      case bs: ImmutableArray[B] =>
-        val dest = Array.ofDim[Any](length + bs.length)
-        Array.copy(unsafeArray, 0, dest, 0, length)
-        Array.copy(bs.unsafeArray, 0, dest, length, bs.length)
-        ImmutableArray.unsafeWrapArray(dest)
-      case _ =>
-        fromIterable(View.Concat(toIterable, xs))
-    }
+  override def appendedAll[B >: A](suffix: collection.Iterable[B]): ImmutableArray[B] = {
+    val b = ArrayBuilder.make[Any]()
+    val k = suffix.knownSize
+    if(k >= 0) b.sizeHint(k + unsafeArray.length)
+    b.addAll(unsafeArray)
+    b.addAll(suffix)
+    ImmutableArray.unsafeWrapArray(b.result())
+  }
 
-  override def prependedAll[B >: A](xs: collection.Iterable[B]): ImmutableArray[B] =
-    xs match {
-      case bs: ImmutableArray[B] =>
-        val dest = Array.ofDim[Any](length + bs.length)
-        Array.copy(bs.unsafeArray, 0, dest, 0, bs.length)
-        Array.copy(unsafeArray, 0, dest, bs.length, length)
-        ImmutableArray.unsafeWrapArray(dest)
-      case _ =>
-        fromIterable(View.Concat(xs, toIterable))
-    }
+  override def prependedAll[B >: A](prefix: collection.Iterable[B]): ImmutableArray[B] = {
+    val b = ArrayBuilder.make[Any]()
+    val k = prefix.knownSize
+    if(k >= 0) b.sizeHint(k + unsafeArray.length)
+    b.addAll(prefix)
+    if(k < 0) b.sizeHint(b.length + unsafeArray.length)
+    b.addAll(unsafeArray)
+    ImmutableArray.unsafeWrapArray(b.result())
+  }
 
   override def zip[B](that: collection.Iterable[B]): ImmutableArray[(A, B)] =
     that match {
       case bs: ImmutableArray[B] =>
-        ImmutableArray.tabulate(finiteSize min bs.finiteSize) { i =>
+        ImmutableArray.tabulate(length min bs.length) { i =>
           (apply(i), bs(i))
         }
       case _ =>
-        fromIterable(View.Zip(toIterable, that))
+        fromIterable(new View.Zip(toIterable, that))
     }
 
-  override def take(n: Int): ImmutableArray[A] = iterableFactory.tabulate(n)(apply)
+  override def take(n: Int): ImmutableArray[A] = ImmutableArray.unsafeWrapArray(new ArrayOps(unsafeArray).take(n))
 
-  override def takeRight(n: Int): ImmutableArray[A] = iterableFactory.tabulate(n min length)(i => apply(length - (n min length) + i))
+  override def takeRight(n: Int): ImmutableArray[A] = ImmutableArray.unsafeWrapArray(new ArrayOps(unsafeArray).takeRight(n))
 
-  override def drop(n: Int): ImmutableArray[A] = iterableFactory.tabulate((length - n) max 0)(i => apply(n + i))
+  override def drop(n: Int): ImmutableArray[A] = ImmutableArray.unsafeWrapArray(new ArrayOps(unsafeArray).drop(n))
 
-  override def dropRight(n: Int): ImmutableArray[A] = iterableFactory.tabulate((length - n) max 0)(apply)
+  override def dropRight(n: Int): ImmutableArray[A] = ImmutableArray.unsafeWrapArray(new ArrayOps(unsafeArray).dropRight(n))
 
-  override def slice(from: Int, until: Int): ImmutableArray[A] = {
-    val lo = scala.math.max(from, 0)
-    iterableFactory.tabulate(until - lo)(i => apply(i + lo))
-  }
+  override def slice(from: Int, until: Int): ImmutableArray[A] = ImmutableArray.unsafeWrapArray(new ArrayOps(unsafeArray).slice(from, until))
 
-  override def tail: ImmutableArray[A] =
-    if (length > 0) {
-      val dest = Array.ofDim(length - 1)(elemTag)
-      java.lang.System.arraycopy(unsafeArray, 1, dest, 0, length - 1)
-      ImmutableArray.unsafeWrapArray(dest)
-    } else throw new UnsupportedOperationException("tail of empty array")
+  override def tail: ImmutableArray[A] = ImmutableArray.unsafeWrapArray(new ArrayOps(unsafeArray).tail)
 
-  override def reverse: ImmutableArray[A] = iterableFactory.tabulate(length)(i => apply(length - 1 - i))
+  override def reverse: ImmutableArray[A] = ImmutableArray.unsafeWrapArray(new ArrayOps(unsafeArray).reverse)
 
   override def className = "ImmutableArray"
+
+  override def copyToArray[B >: A](xs: Array[B], start: Int = 0): xs.type = copyToArray[B](xs, start, length)
+
+  override def copyToArray[B >: A](xs: Array[B], start: Int, len: Int): xs.type = {
+    val l = scala.math.min(scala.math.min(len, length), xs.length-start)
+    if(l > 0) Array.copy(unsafeArray, 0, xs, start, l)
+    xs
+  }
 }
 
 /**
@@ -179,9 +176,10 @@ object ImmutableArray extends StrictOptimizedClassTagSeqFactory[ImmutableArray] 
     case x: Array[Unit]    => new ofUnit(x)
   }).asInstanceOf[ImmutableArray[T]]
 
+  @SerialVersionUID(3L)
   final class ofRef[T <: AnyRef](val unsafeArray: Array[T]) extends ImmutableArray[T] with Serializable {
     lazy val elemTag = ClassTag[T](unsafeArray.getClass.getComponentType)
-    protected def finiteSize: Int = unsafeArray.length
+    def length: Int = unsafeArray.length
     @throws[ArrayIndexOutOfBoundsException]
     def apply(i: Int): T = unsafeArray(i)
     override def hashCode = MurmurHash3.arrayHash(unsafeArray)
@@ -191,9 +189,10 @@ object ImmutableArray extends StrictOptimizedClassTagSeqFactory[ImmutableArray] 
     }
   }
 
+  @SerialVersionUID(3L)
   final class ofByte(val unsafeArray: Array[Byte]) extends ImmutableArray[Byte] with Serializable {
     protected[this] def elemTag = ClassTag.Byte
-    protected def finiteSize: Int = unsafeArray.length
+    def length: Int = unsafeArray.length
     @throws[ArrayIndexOutOfBoundsException]
     def apply(i: Int): Byte = unsafeArray(i)
     override def hashCode = MurmurHash3.arrayHash(unsafeArray)
@@ -203,9 +202,10 @@ object ImmutableArray extends StrictOptimizedClassTagSeqFactory[ImmutableArray] 
     }
   }
 
+  @SerialVersionUID(3L)
   final class ofShort(val unsafeArray: Array[Short]) extends ImmutableArray[Short] with Serializable {
     protected[this] def elemTag = ClassTag.Short
-    protected def finiteSize: Int = unsafeArray.length
+    def length: Int = unsafeArray.length
     @throws[ArrayIndexOutOfBoundsException]
     def apply(i: Int): Short = unsafeArray(i)
     override def hashCode = MurmurHash3.arrayHash(unsafeArray)
@@ -215,9 +215,10 @@ object ImmutableArray extends StrictOptimizedClassTagSeqFactory[ImmutableArray] 
     }
   }
 
+  @SerialVersionUID(3L)
   final class ofChar(val unsafeArray: Array[Char]) extends ImmutableArray[Char] with Serializable {
     protected[this] def elemTag = ClassTag.Char
-    protected def finiteSize: Int = unsafeArray.length
+    def length: Int = unsafeArray.length
     @throws[ArrayIndexOutOfBoundsException]
     def apply(i: Int): Char = unsafeArray(i)
     override def hashCode = MurmurHash3.arrayHash(unsafeArray)
@@ -227,9 +228,10 @@ object ImmutableArray extends StrictOptimizedClassTagSeqFactory[ImmutableArray] 
     }
   }
 
+  @SerialVersionUID(3L)
   final class ofInt(val unsafeArray: Array[Int]) extends ImmutableArray[Int] with Serializable {
     protected[this] def elemTag = ClassTag.Int
-    protected def finiteSize: Int = unsafeArray.length
+    def length: Int = unsafeArray.length
     @throws[ArrayIndexOutOfBoundsException]
     def apply(i: Int): Int = unsafeArray(i)
     override def hashCode = MurmurHash3.arrayHash(unsafeArray)
@@ -239,9 +241,10 @@ object ImmutableArray extends StrictOptimizedClassTagSeqFactory[ImmutableArray] 
     }
   }
 
+  @SerialVersionUID(3L)
   final class ofLong(val unsafeArray: Array[Long]) extends ImmutableArray[Long] with Serializable {
     protected[this] def elemTag = ClassTag.Long
-    protected def finiteSize: Int = unsafeArray.length
+    def length: Int = unsafeArray.length
     @throws[ArrayIndexOutOfBoundsException]
     def apply(i: Int): Long = unsafeArray(i)
     override def hashCode = MurmurHash3.arrayHash(unsafeArray)
@@ -251,9 +254,10 @@ object ImmutableArray extends StrictOptimizedClassTagSeqFactory[ImmutableArray] 
     }
   }
 
+  @SerialVersionUID(3L)
   final class ofFloat(val unsafeArray: Array[Float]) extends ImmutableArray[Float] with Serializable {
     protected[this] def elemTag = ClassTag.Float
-    protected def finiteSize: Int = unsafeArray.length
+    def length: Int = unsafeArray.length
     @throws[ArrayIndexOutOfBoundsException]
     def apply(i: Int): Float = unsafeArray(i)
     override def hashCode = MurmurHash3.arrayHash(unsafeArray)
@@ -263,9 +267,10 @@ object ImmutableArray extends StrictOptimizedClassTagSeqFactory[ImmutableArray] 
     }
   }
 
+  @SerialVersionUID(3L)
   final class ofDouble(val unsafeArray: Array[Double]) extends ImmutableArray[Double] with Serializable {
     protected[this] def elemTag = ClassTag.Double
-    protected def finiteSize: Int = unsafeArray.length
+    def length: Int = unsafeArray.length
     @throws[ArrayIndexOutOfBoundsException]
     def apply(i: Int): Double = unsafeArray(i)
     override def hashCode = MurmurHash3.arrayHash(unsafeArray)
@@ -275,9 +280,10 @@ object ImmutableArray extends StrictOptimizedClassTagSeqFactory[ImmutableArray] 
     }
   }
 
+  @SerialVersionUID(3L)
   final class ofBoolean(val unsafeArray: Array[Boolean]) extends ImmutableArray[Boolean] with Serializable {
     protected[this] def elemTag = ClassTag.Boolean
-    protected def finiteSize: Int = unsafeArray.length
+    def length: Int = unsafeArray.length
     @throws[ArrayIndexOutOfBoundsException]
     def apply(i: Int): Boolean = unsafeArray(i)
     override def hashCode = MurmurHash3.arrayHash(unsafeArray)
@@ -287,9 +293,10 @@ object ImmutableArray extends StrictOptimizedClassTagSeqFactory[ImmutableArray] 
     }
   }
 
+  @SerialVersionUID(3L)
   final class ofUnit(val unsafeArray: Array[Unit]) extends ImmutableArray[Unit] with Serializable {
     protected[this] def elemTag = ClassTag.Unit
-    protected def finiteSize: Int = unsafeArray.length
+    def length: Int = unsafeArray.length
     @throws[ArrayIndexOutOfBoundsException]
     def apply(i: Int): Unit = unsafeArray(i)
     override def hashCode = MurmurHash3.arrayHash(unsafeArray)

@@ -23,6 +23,7 @@ object LinkedHashMap extends MapFactory[LinkedHashMap] {
   /** Class for the linked hash map entry, used internally.
     *  @since 2.8
     */
+  @SerialVersionUID(3L)
   final class LinkedEntry[K, V](val key: K, var value: V)
     extends HashEntry[K, LinkedEntry[K, V]]
       with Serializable {
@@ -45,7 +46,7 @@ object LinkedHashMap extends MapFactory[LinkedHashMap] {
  *  @define orderDependent
  *  @define orderDependentFold
  */
-@SerialVersionUID(1L)
+@SerialVersionUID(3L)
 class LinkedHashMap[K, V]
   extends Map[K, V]
     with MapOps[K, V, LinkedHashMap, LinkedHashMap[K, V]]
@@ -82,12 +83,7 @@ class LinkedHashMap[K, V]
   @transient protected var firstEntry: Entry = null
   @transient protected var lastEntry: Entry = null
 
-  def mapFactory = LinkedHashMap
-
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[(K, V)]) = mapFromIterable(coll)
-  protected[this] def mapFromIterable[K2, V2](it: collection.Iterable[(K2, V2)]) = mapFactory.from(it)
-
-  protected[this] def newSpecificBuilder() = mapFactory.newBuilder()
+  override def mapFactory: MapFactory[LinkedHashMap] = LinkedHashMap
 
   def get(key: K): Option[V] = {
     val e = table.findEntry(key)
@@ -127,6 +123,7 @@ class LinkedHashMap[K, V]
       else Iterator.empty.next()
   }
 
+  @SerialVersionUID(3L)
   protected class LinkedKeySet extends KeySet {
     override def iterableFactory: IterableFactory[collection.Set] = LinkedHashSet
   }

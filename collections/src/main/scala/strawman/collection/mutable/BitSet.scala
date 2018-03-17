@@ -13,7 +13,7 @@ import scala.Predef.{require}
   *
   * $bitsetinfo
   *
-  * @see [[http://docs.scala-lang.org/overviews/collections/concrete-mutable-collection-classes.html#mutable_bitsets "Scala's Collection Library overview"]]
+  * @see [[http://docs.scala-lang.org/overviews/collections/concrete-mutable-collection-classes.html#mutable-bitsets "Scala's Collection Library overview"]]
   * section on `Mutable Bitsets` for more information.
   *
   * @define Coll `BitSet`
@@ -23,7 +23,7 @@ import scala.Predef.{require}
   * @define mayNotTerminateInf
   * @define willNotTerminateInf
   */
-@SerialVersionUID(8483111450368547763L)
+@SerialVersionUID(3L)
 class BitSet(protected[collection] final var elems: Array[Long])
   extends SortedSet[Int]
     with collection.BitSet
@@ -36,24 +36,16 @@ class BitSet(protected[collection] final var elems: Array[Long])
 
   def this() = this(0)
 
-  def iterableFactory = Set
-
-  def sortedIterableFactory = SortedSet
-
-  protected[this] def sortedFromIterable[B : Ordering](it: collection.Iterable[B]): collection.mutable.SortedSet[B] =
-    collection.mutable.SortedSet.from(it)
-
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[Int]): BitSet =
-    BitSet.fromSpecific(coll)
-
-  protected[this] def newSpecificBuilder(): Builder[Int, BitSet] = BitSet.newBuilder()
+  def bitSetFactory = BitSet
 
   protected[collection] final def nwords: Int = elems.length
 
   protected[collection] final def word(idx: Int): Long =
     if (idx < nwords) elems(idx) else 0L
 
-  protected[collection] def fromBitMaskNoCopy(elems: Array[Long]): BitSet = new BitSet(elems)
+  protected[collection] def fromBitMaskNoCopy(elems: Array[Long]): BitSet =
+    if (elems.length == 0) empty
+    else new BitSet(elems)
 
   def addOne(elem: Int): this.type = {
     require(elem >= 0)
@@ -96,8 +88,6 @@ class BitSet(protected[collection] final var elems: Array[Long])
   def get(elem: Int): Option[Int] = if (contains(elem)) Some(elem) else None
 
   def unconstrained: collection.Set[Int] = this
-
-  def empty: BitSet = BitSet.empty
 
   /** Updates this bitset to the union with another bitset by performing a bitwise "or".
     *
@@ -160,4 +150,22 @@ object BitSet extends SpecificIterableFactory[Int, BitSet] {
 
   def newBuilder(): Builder[Int, BitSet] = new GrowableBuilder(empty)
 
+  /** A bitset containing all the bits in an array */
+  def fromBitMask(elems: Array[Long]): BitSet = {
+    val len = elems.length
+    if (len == 0) empty
+    else {
+      val a = java.util.Arrays.copyOf(elems, len)
+      new BitSet(a)
+    }
+  }
+
+  /** A bitset containing all the bits in an array, wrapping the existing
+    *  array without copying.
+    */
+  def fromBitMaskNoCopy(elems: Array[Long]): BitSet = {
+    val len = elems.length
+    if (len == 0) empty
+    else new BitSet(elems)
+  }
 }

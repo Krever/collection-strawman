@@ -42,23 +42,14 @@ import strawman.collection.mutable.{Builder, ImmutableBuilder}
   * @define mayNotTerminateInf
   * @define willNotTerminateInf
   */
-@SerialVersionUID(301002838095710379L)
+@SerialVersionUID(3L)
 sealed class ListMap[K, +V]
   extends Map[K, V]
     with MapOps[K, V, ListMap, ListMap[K, V]]
     with StrictOptimizedIterableOps[(K, V), Iterable, ListMap[K, V]]
     with Serializable {
 
-  def iterableFactory = List
-  def mapFactory = ListMap
-
-  protected[this] def mapFromIterable[K2, V2](it: collection.Iterable[(K2, V2)]): ListMap[K2,V2] = ListMap.from(it)
-
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[(K, V)]): ListMap[K, V] = ListMap.from(coll)
-
-  protected[this] def newSpecificBuilder(): Builder[(K, V), ListMap[K, V]] = ListMap.newBuilder()
-
-  def empty: ListMap[K, V] = ListMap.empty[K, V]
+  override def mapFactory: MapFactory[ListMap] = ListMap
 
   override def size: Int = 0
 
@@ -89,7 +80,7 @@ sealed class ListMap[K, +V]
   /**
     * Represents an entry in the `ListMap`.
     */
-  @SerialVersionUID(-6453056603889598734L)
+  @SerialVersionUID(3L)
   protected class Node[V1 >: V](override protected val key: K,
                                 override protected val value: V1) extends ListMap[K, V1] with Serializable {
 
@@ -149,7 +140,7 @@ sealed class ListMap[K, +V]
   * n elements will take O(n^2^) time. This makes the builder suitable only for a small number of
   * elements.
   *
-  * @see [[http://docs.scala-lang.org/overviews/collections/concrete-immutable-collection-classes.html#list_maps "Scala's Collection Library overview"]]
+  * @see [[http://docs.scala-lang.org/overviews/collections/concrete-immutable-collection-classes.html#list-maps "Scala's Collection Library overview"]]
   * section on `List Maps` for more information.
   * @since 1
   * @define Coll ListMap
@@ -159,7 +150,7 @@ object ListMap extends MapFactory[ListMap] {
 
   def empty[K, V]: ListMap[K, V] = EmptyListMap.asInstanceOf[ListMap[K, V]]
 
-  @SerialVersionUID(-8256686706655863282L)
+  @SerialVersionUID(3L)
   private object EmptyListMap extends ListMap[Any, Nothing]
 
   def from[K, V](it: collection.IterableOnce[(K, V)]): ListMap[K, V] =

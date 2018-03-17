@@ -29,7 +29,7 @@ import scala.{Any, Boolean, Int, NoSuchElementException, SerialVersionUID, Seria
   * @define mayNotTerminateInf
   * @define willNotTerminateInf
   */
-@SerialVersionUID(-8417059026623606218L)
+@SerialVersionUID(3L)
 sealed class ListSet[A]
   extends Set[A]
     with SetOps[A, ListSet, ListSet[A]]
@@ -44,8 +44,6 @@ sealed class ListSet[A]
   def incl(elem: A): ListSet[A] = new Node(elem)
   def excl(elem: A): ListSet[A] = this
 
-  def empty: ListSet[A] = ListSet.empty
-
   def iterator(): strawman.collection.Iterator[A] = {
     var curr: ListSet[A] = this
     var res: List[A] = Nil
@@ -59,15 +57,12 @@ sealed class ListSet[A]
   protected def elem: A = throw new NoSuchElementException("elem of empty set")
   protected def next: ListSet[A] = throw new NoSuchElementException("next of empty set")
 
-  def iterableFactory = ListSet
-  protected[this] def fromSpecificIterable(coll: collection.Iterable[A]): ListSet[A] = fromIterable(coll)
-
-  protected[this] def newSpecificBuilder(): Builder[A, ListSet[A]] = ListSet.newBuilder()
+  override def iterableFactory: IterableFactory[ListSet] = ListSet
 
   /**
     * Represents an entry in the `ListSet`.
     */
-  @SerialVersionUID(-787710309854855049L)
+  @SerialVersionUID(3L)
   protected class Node(override protected val elem: A) extends ListSet[A] with Serializable {
 
     override def size = sizeInternal(this, 0)
@@ -119,7 +114,7 @@ object ListSet extends IterableFactory[ListSet] {
       case _ => (newBuilder[E]() ++= it).result()
     }
 
-  @SerialVersionUID(5010379588739277132L)
+  @SerialVersionUID(3L)
   private object EmptyListSet extends ListSet[Any]
   private[collection] def emptyInstance: ListSet[Any] = EmptyListSet
 
